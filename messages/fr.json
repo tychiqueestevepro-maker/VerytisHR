@@ -1,0 +1,98 @@
+{
+  "Common": {
+    "loading": "Chargement...",
+    "save": "Enregistrer",
+    "saved": "Enregistré",
+    "cancel": "Annuler",
+    "next": "Suivant",
+    "previous": "Précédent",
+    "error": "Erreur",
+    "no_items_found": "Aucun élément trouvé."
+  },
+  "Auth": {
+    "login_title": "Connexion",
+    "client_access": "Accès client",
+    "email_placeholder": "Email",
+    "password_placeholder": "Mot de passe",
+    "submit": "Entrer"
+  },
+  "Dashboard": {
+    "title": "Que voulez-vous piloter aujourd’hui ?",
+    "subtitle": "Sélectionnez une application, puis demandez une action, un état ou une décision.",
+    "bot_reply": "Je suis votre assistant. Comment puis-je vous aider aujourd'hui ?",
+    "application": "Application",
+    "context": "Contexte",
+    "sourcing": "Sourcing"
+  },
+  "Nav": {
+    "home": "Home",
+    "reports": "Rapports",
+    "integrations": "Intégrations",
+    "settings": "Paramètres",
+    "help": "Centre d’aide",
+    "menu": "MENU",
+    "logout": "Déconnexion",
+    "applications": "Applications",
+    "all_applications": "Toutes les applications",
+    "new_application": "Nouvelle Application",
+    "workspace_setup": "Setup workspace",
+    "application_detail": "Détail de l'Application",
+    "candidates": "Candidats",
+    "pipeline": "Pipeline",
+    "sourcing": "Sourcing",
+    "import_candidates": "Importer Candidats",
+    "verification_queue": "File de Vérification",
+    "results": "Résultats",
+    "pipeline_builder": "Générateur de Pipeline",
+    "create_test": "Créer Test",
+    "candidate_links": "Liens Candidats",
+    "responses": "Réponses",
+    "company_profile": "Profil Entreprise",
+    "team": "Équipe",
+    "criteria": "Critères",
+    "billing_credits": "Facturation / Crédits"
+  },
+  "FlowCommandBar": {
+    "flow": "Focus",
+    "select_flow": "Sélectionner un focus",
+    "assistant": "Assistant",
+    "ask_anything": "Demandez n'importe quoi...",
+    "context": "Contexte",
+    "none": "Aucun"
+  },
+  "Settings": {
+    "title": "Paramètres Système",
+    "tab_profile": "Profil",
+    "tab_organization": "Organisation",
+    "tab_members": "Membres",
+    "first_name": "Prénom",
+    "last_name": "Nom",
+    "email": "Email",
+    "avatar_url": "URL de l'avatar",
+    "language": "Langue de l'interface",
+    "languages": {
+      "fr": "Français",
+      "en": "English"
+    },
+    "company_name": "Nom de l'entreprise",
+    "industry": "Secteur d'activité",
+    "website": "Site web",
+    "organization_members": "Membres de l'organisation",
+    "remove": "Retirer",
+    "invite": "+ Inviter un nouveau membre",
+    "roles": {
+      "owner": "Propriétaire",
+      "admin": "Administrateur",
+      "member": "Membre"
+    },
+    "unexpected_error": "Une erreur inattendue est survenue"
+  },
+  "Integrations": {
+    "title": "Intégrations",
+    "step_install": "Installer l'extension",
+    "step_install_desc": "Nécessaire pour connecter LinkedIn, importer les profils et vérifier les données candidats.",
+    "download_chrome": "Télécharger sur le Chrome Web Store",
+    "step_link": "Lier votre compte",
+    "step_link_desc": "Connecte l'extension à votre espace recruteur."
+  }
+}

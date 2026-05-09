@@ -1,0 +1,98 @@
+{
+  "Common": {
+    "loading": "Loading...",
+    "save": "Save",
+    "saved": "Saved",
+    "cancel": "Cancel",
+    "next": "Next",
+    "previous": "Previous",
+    "error": "Error",
+    "no_items_found": "No items found."
+  },
+  "Auth": {
+    "login_title": "Login",
+    "client_access": "Client access",
+    "email_placeholder": "Email",
+    "password_placeholder": "Password",
+    "submit": "Enter"
+  },
+  "Dashboard": {
+    "title": "What would you like to drive today?",
+    "subtitle": "Select an application, then ask for an action, a status, or a decision.",
+    "bot_reply": "I am your assistant. How can I help you today?",
+    "application": "Application",
+    "context": "Context",
+    "sourcing": "Sourcing"
+  },
+  "Nav": {
+    "home": "Home",
+    "reports": "Reports",
+    "integrations": "Integrations",
+    "settings": "Settings",
+    "help": "Help Center",
+    "menu": "MENU",
+    "logout": "Logout",
+    "applications": "Applications",
+    "all_applications": "All Applications",
+    "new_application": "New Application",
+    "workspace_setup": "Workspace Setup",
+    "application_detail": "Application Detail",
+    "candidates": "Candidates",
+    "pipeline": "Pipeline",
+    "sourcing": "Sourcing",
+    "import_candidates": "Import Candidates",
+    "verification_queue": "Verification Queue",
+    "results": "Results",
+    "pipeline_builder": "Pipeline Builder",
+    "create_test": "Create Test",
+    "candidate_links": "Candidate Links",
+    "responses": "Responses",
+    "company_profile": "Company Profile",
+    "team": "Team",
+    "criteria": "Criteria",
+    "billing_credits": "Billing / Credits"
+  },
+  "FlowCommandBar": {
+    "flow": "Focus",
+    "select_flow": "Select a focus",
+    "assistant": "Assistant",
+    "ask_anything": "Ask anything...",
+    "context": "Context",
+    "none": "None"
+  },
+  "Settings": {
+    "title": "System Settings",
+    "tab_profile": "Profile",
+    "tab_organization": "Organization",
+    "tab_members": "Members",
+    "first_name": "First Name",
+    "last_name": "Last Name",
+    "email": "Email",
+    "avatar_url": "Avatar URL",
+    "language": "Interface Language",
+    "languages": {
+      "fr": "Français",
+      "en": "English"
+    },
+    "company_name": "Company Name",
+    "industry": "Industry",
+    "website": "Website",
+    "organization_members": "Organization Members",
+    "remove": "Remove",
+    "invite": "+ Invite new member",
+    "roles": {
+      "owner": "Owner",
+      "admin": "Admin",
+      "member": "Member"
+    },
+    "unexpected_error": "An unexpected error occurred"
+  },
+  "Integrations": {
+    "title": "Integrations",
+    "step_install": "Install the extension",
+    "step_install_desc": "Necessary to connect LinkedIn, import profiles and verify candidate data.",
+    "download_chrome": "Download from the Chrome Web Store",
+    "step_link": "Link your account",
+    "step_link_desc": "Connects the extension to your recruiter workspace."
+  }
+}
