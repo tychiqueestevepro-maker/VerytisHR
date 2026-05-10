@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { AlertCircle, CheckCircle2, XCircle, Linkedin } from "lucide-react";
+import { AlertCircle, CheckCircle2, XCircle } from "lucide-react";
 import { ApplicationTabs, PageHeader, PlainButton, ScoreBadge, SectionBlock, StatusBadge, LinkedinBadge } from "@/components/hr/application-components";
 import { AnalysisButton } from "@/components/hr/analysis-button";
 import { getApplicationWorkspaceData } from "@/lib/hr/application-workspace";
