@@ -84,10 +84,41 @@ function Toggle({ name, label, defaultChecked = true }: { name: string; label: s
   );
 }
 
+function CheckOption({ name, value, label, defaultChecked = false }: { name: string; value: string; label: string; defaultChecked?: boolean }) {
+  return (
+    <label className="flex min-h-10 items-center gap-3 border-b border-border/70 py-2 last:border-0">
+      <input name={name} type="checkbox" value={value} defaultChecked={defaultChecked} className="size-4 accent-foreground" />
+      <span className="text-sm text-foreground/70">{label}</span>
+    </label>
+  );
+}
+
 export function ApplicationCreateForm() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setSubmitting] = useState(false);
+
+  async function uploadWorkSamples(applicationId: string, form: FormData) {
+    const content = textValue(form, "work_samples");
+    const file = form.get("work_sample_file");
+    const hasFile = file instanceof File && file.size > 0;
+    if (!content && !hasFile) return;
+
+    const sampleForm = new FormData();
+    sampleForm.set("sampleType", "real_team_material");
+    if (content) sampleForm.set("content", content);
+    if (hasFile) sampleForm.set("file", file);
+
+    const response = await fetch(`/api/hr/applications/${applicationId}/work-samples`, {
+      method: "POST",
+      body: sampleForm,
+    });
+    const body = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(typeof body.error === "string" ? body.error : "Unable to upload work sample");
+    }
+  }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -97,6 +128,7 @@ export function ApplicationCreateForm() {
     const form = new FormData(event.currentTarget);
     const mustHaveSkills = splitList(form.get("must_have_skills"));
     const niceToHaveSkills = splitList(form.get("nice_to_have_skills"));
+    const workSamples = textValue(form, "work_samples");
 
     const payload = {
       title: textValue(form, "title"),
@@ -122,13 +154,21 @@ export function ApplicationCreateForm() {
       team_context: textValue(form, "team_context"),
       team_workflow: textValue(form, "team_workflow"),
       previous_team_work: textValue(form, "previous_team_work"),
+      work_samples: workSamples,
       manager_expectations: textValue(form, "manager_expectations"),
       success_criteria: textValue(form, "success_criteria"),
-      use_linkedin_verification: form.get("use_linkedin_verification") === "on",
-      require_cv_coherence: form.get("require_cv_coherence") === "on",
       generate_contextual_pipeline: form.get("generate_contextual_pipeline") === "on",
       difficulty_level: textValue(form, "difficulty_level") ?? "medium",
+      number_of_questions: numberValue(form, "number_of_questions") ?? 5,
+      estimated_time_minutes: numberValue(form, "estimated_time_minutes") ?? 25,
+      question_types: form.getAll("question_types").filter((value): value is string => typeof value === "string"),
       candidate_link_enabled: form.get("candidate_link_enabled") === "on",
+      apply_enabled: form.get("candidate_link_enabled") === "on",
+      pipeline_generation_mode: textValue(form, "pipeline_generation_mode") ?? "dynamic",
+      require_cv_upload: form.get("require_cv_upload") === "on",
+      require_linkedin_url: form.get("require_linkedin_url") === "on",
+      use_linkedin_verification: form.get("use_linkedin_verification") === "on",
+      require_cv_coherence: form.get("require_cv_coherence") === "on",
       workflow_type: "application",
     };
 
@@ -144,9 +184,10 @@ export function ApplicationCreateForm() {
         throw new Error(typeof body.error === "string" ? body.error : "Unable to create application");
       }
 
-      const id = body?.application?.id;
+      const id = body?.application?.id ?? body?.mission?.id;
       if (typeof id !== "string") throw new Error("Application created, but the response did not include an id");
 
+      await uploadWorkSamples(id, form);
       router.push(`/hr/applications/${id}`);
       router.refresh();
     } catch (caught) {
@@ -200,7 +241,7 @@ export function ApplicationCreateForm() {
           <Textarea name="description" placeholder="General role description." />
         </Field>
         <Field label="Responsibilities" span>
-          <Textarea name="responsibilities" placeholder="Main applications and ownership areas." />
+          <Textarea name="responsibilities" placeholder="Main responsibilities, ownership areas and expected outcomes." />
         </Field>
         <Field label="Must-have skills">
           <Textarea name="must_have_skills" placeholder="Outbound sales&#10;US market&#10;CRM hygiene" />
@@ -235,6 +276,19 @@ export function ApplicationCreateForm() {
         <Field label="Previous work">
           <Textarea name="previous_team_work" placeholder="Examples of projects or tasks already done." />
         </Field>
+        <Field label="Work samples / real material" span>
+          <div className="space-y-3">
+            <Textarea
+              name="work_samples"
+              placeholder="Paste a real task, client case, code excerpt, internal process, mission example or frequent business situation."
+            />
+            <Input
+              name="work_sample_file"
+              type="file"
+              accept=".txt,.md,.csv,.json,.js,.jsx,.ts,.tsx,.py,.rb,.go,.java,.cs,.sql,.yaml,.yml,.xml,.html,.css,.scss"
+            />
+          </div>
+        </Field>
         <Field label="Manager expectations">
           <Textarea name="manager_expectations" placeholder="What the manager actually expects." />
         </Field>
@@ -243,13 +297,17 @@ export function ApplicationCreateForm() {
         </Field>
       </Section>
 
-      <Section title="Evaluation settings">
+      <Section title="Pipeline settings">
         <div className="md:col-span-2">
-          <Toggle name="use_linkedin_verification" label="Use LinkedIn verification" />
-          <Toggle name="require_cv_coherence" label="Require CV coherence" />
           <Toggle name="generate_contextual_pipeline" label="Generate contextual pipeline" />
-          <Toggle name="candidate_link_enabled" label="Candidate link enabled" />
+          <Toggle name="candidate_link_enabled" label="Public apply link enabled" />
         </div>
+        <Field label="Generation mode">
+          <Select name="pipeline_generation_mode" defaultValue="dynamic">
+            <option value="dynamic">Dynamic variations</option>
+            <option value="fixed">Fixed question set</option>
+          </Select>
+        </Field>
         <Field label="Difficulty level">
           <Select name="difficulty_level" defaultValue="medium">
             <option value="easy">Easy</option>
@@ -257,6 +315,32 @@ export function ApplicationCreateForm() {
             <option value="hard">Hard</option>
           </Select>
         </Field>
+        <Field label="Number of questions">
+          <Input name="number_of_questions" type="number" min="1" max="12" defaultValue="5" />
+        </Field>
+        <Field label="Estimated completion time">
+          <Input name="estimated_time_minutes" type="number" min="5" max="120" defaultValue="25" />
+        </Field>
+        <div className="md:col-span-2">
+          <span className="mb-2 block text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">Question types</span>
+          <div className="grid gap-x-6 rounded-md border border-border px-3 md:grid-cols-2">
+            <CheckOption name="question_types" value="short_answer" label="Quick timed answer" defaultChecked />
+            <CheckOption name="question_types" value="multiple_choice" label="Multiple choice" defaultChecked />
+            <CheckOption name="question_types" value="written_answer" label="Written answer" defaultChecked />
+            <CheckOption name="question_types" value="scenario" label="Scenario" defaultChecked />
+            <CheckOption name="question_types" value="prioritization" label="Prioritization" defaultChecked />
+            <CheckOption name="question_types" value="problem_solving" label="Problem solving" defaultChecked />
+          </div>
+        </div>
+      </Section>
+
+      <Section title="Verification settings">
+        <div className="md:col-span-2">
+          <Toggle name="require_cv_upload" label="Require CV upload" />
+          <Toggle name="require_linkedin_url" label="Require LinkedIn URL" />
+          <Toggle name="use_linkedin_verification" label="Use LinkedIn verification" />
+          <Toggle name="require_cv_coherence" label="Require CV / LinkedIn coherence" />
+        </div>
       </Section>
 
       {error ? (

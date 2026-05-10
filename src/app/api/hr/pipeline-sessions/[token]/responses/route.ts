@@ -5,6 +5,7 @@ import {
   updatePipelineSessionCandidateProfile,
 } from "@/lib/hr/pipeline-sessions";
 import { logUsageEvent } from "@/lib/hr/usage";
+import { analyzePipelineSession } from "@/lib/hr/pipeline";
 
 type RouteContext = {
   params: Promise<{ token: string }> | { token: string };
@@ -57,6 +58,15 @@ export async function POST(request: Request, context: RouteContext) {
         responses_count: responses.length,
       },
     });
+
+    // Automatically trigger analysis if completed
+    if (result.completed) {
+      try {
+        await analyzePipelineSession(token);
+      } catch (analysisError) {
+        console.error("Auto-analysis failed:", analysisError);
+      }
+    }
 
     return NextResponse.json({ success: true, submittedAt: result.submittedAt });
   } catch (error: unknown) {

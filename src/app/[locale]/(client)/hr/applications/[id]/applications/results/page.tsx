@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { ApplicationsTabs, EmptyState, ApplicationTabs, PageHeader, ScoreBadge, StatusBadge } from "@/components/hr/application-components";
+import { EmptyState, ApplicationTabs, PageHeader, ScoreBadge, StatusBadge } from "@/components/hr/application-components";
 import { getApplicationWorkspaceData } from "@/lib/hr/application-workspace";
 
 export default async function ApplicationsResultsPage({ params }: { params: Promise<{ id: string }> }) {
@@ -8,7 +8,7 @@ export default async function ApplicationsResultsPage({ params }: { params: Prom
   if (!data) notFound();
 
   const results = [...data.applicationSessions]
-    .filter((application) => application.status === "submitted" || application.status === "analyzed" || application.pipelineScore !== null)
+    .filter((application) => application.responseStatus === "Completed" || application.status === "analyzed" || application.pipelineScore !== null)
     .sort((a, b) => (b.pipelineScore ?? -1) - (a.pipelineScore ?? -1));
 
   return (
@@ -23,12 +23,11 @@ export default async function ApplicationsResultsPage({ params }: { params: Prom
           </>
         }
       />
-      <ApplicationTabs applicationId={id} active="applications" />
-      <ApplicationsTabs applicationId={id} active="results" />
+      <ApplicationTabs applicationId={id} active="results" />
 
       {results.length ? (
         <div className="overflow-x-auto border-y border-border">
-          <table className="w-full min-w-[1180px] border-collapse text-sm">
+          <table className="w-full min-w-[1320px] border-collapse text-sm">
             <thead>
               <tr className="border-b border-border bg-secondary/40 text-left text-[11px] uppercase tracking-[0.16em] text-foreground/40">
                 <th className="px-3 py-3 font-medium">Candidate</th>
@@ -38,6 +37,10 @@ export default async function ApplicationsResultsPage({ params }: { params: Prom
                 <th className="px-3 py-3 text-right font-medium">Fit score</th>
                 <th className="px-3 py-3 text-right font-medium">Trust score</th>
                 <th className="px-3 py-3 text-right font-medium">Team fit</th>
+                <th className="px-3 py-3 font-medium">Completion</th>
+                <th className="px-3 py-3 font-medium">Integrity</th>
+                <th className="px-3 py-3 text-right font-medium">Paste</th>
+                <th className="px-3 py-3 text-right font-medium">Tabs</th>
                 <th className="px-3 py-3 font-medium">Strengths</th>
                 <th className="px-3 py-3 font-medium">Risks</th>
                 <th className="px-3 py-3 font-medium">Recommendation</th>
@@ -57,6 +60,10 @@ export default async function ApplicationsResultsPage({ params }: { params: Prom
                   <td className="px-3 py-4 text-right"><ScoreBadge value={application.fitScore} /></td>
                   <td className="px-3 py-4 text-right"><ScoreBadge value={application.trustScore} /></td>
                   <td className="px-3 py-4 text-right"><ScoreBadge value={application.teamFitScore} /></td>
+                  <td className="px-3 py-4"><StatusBadge>{application.completionLabel}</StatusBadge></td>
+                  <td className="px-3 py-4"><StatusBadge>{application.integrityStatus}</StatusBadge></td>
+                  <td className="px-3 py-4 text-right text-foreground/65">{application.pasteAttempts}</td>
+                  <td className="px-3 py-4 text-right text-foreground/65">{application.tabSwitches}</td>
                   <td className="max-w-xs px-3 py-4 text-foreground/70">{application.strengths[0] ?? "-"}</td>
                   <td className="max-w-xs px-3 py-4 text-foreground/55">{application.risks[0] ?? "-"}</td>
                   <td className="px-3 py-4"><StatusBadge>{application.recommendation}</StatusBadge></td>

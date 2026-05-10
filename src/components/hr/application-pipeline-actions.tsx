@@ -14,14 +14,18 @@ export type PipelineSessionAction = {
   status: string;
 };
 
+const ANALYZABLE_SESSION_STATUSES = new Set(["submitted", "completed", "flagged"]);
+
 export function ApplicationPipelineActions({
   applicationId,
   pipelineId,
+  publicApplyPath,
   candidates,
   sessions,
 }: {
   applicationId: string;
   pipelineId: string | null;
+  publicApplyPath?: string | null;
   candidates: PipelineCandidateOption[];
   sessions: PipelineSessionAction[];
 }) {
@@ -31,7 +35,9 @@ export function ApplicationPipelineActions({
   const [busyAction, setBusyAction] = useState<string | null>(null);
 
   const submittedTokens = useMemo(
-    () => sessions.filter((session) => session.token && session.status === "submitted").map((session) => session.token as string),
+    () => sessions
+      .filter((session) => session.token && ANALYZABLE_SESSION_STATUSES.has(session.status))
+      .map((session) => session.token as string),
     [sessions],
   );
 
@@ -79,6 +85,17 @@ export function ApplicationPipelineActions({
     } finally {
       setBusyAction(null);
     }
+  }
+
+  async function copyPublicApplyLink() {
+    if (!publicApplyPath) {
+      setMessage("Public apply link is not enabled.");
+      return;
+    }
+
+    const url = `${window.location.origin}${publicApplyPath}`;
+    await navigator.clipboard?.writeText(url).catch(() => undefined);
+    setMessage(`Copied: ${url}`);
   }
 
   async function analyzeResponses() {
@@ -134,6 +151,15 @@ export function ApplicationPipelineActions({
             <option key={candidate.id} value={candidate.id}>{candidate.name}</option>
           )) : <option value="">No candidates</option>}
         </select>
+        <button
+          type="button"
+          onClick={copyPublicApplyLink}
+          disabled={busyAction !== null || !publicApplyPath}
+          className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-foreground/70 transition hover:bg-secondary hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+        >
+          <Link2 className="size-4" />
+          Copy public apply link
+        </button>
         <button
           type="button"
           onClick={createCandidateLink}

@@ -17,6 +17,7 @@ export default async function ApplicationOverviewPage({ params }: { params: Prom
   if (!data) notFound();
 
   const applicationMeta = metadata(data.application);
+  const workflowType = applicationMeta.workflow_type === "sourcing" ? "sourcing" : "application";
 
   if (applicationMeta.workflow_type === "sourcing") {
     redirect(`/hr/sourcing/${id}`);
@@ -35,7 +36,7 @@ export default async function ApplicationOverviewPage({ params }: { params: Prom
           </>
         }
       />
-      <ApplicationTabs applicationId={id} active="overview" workflowType={applicationMeta.workflow_type as any} />
+      <ApplicationTabs applicationId={id} active="overview" workflowType={workflowType} />
 
       <div className="grid gap-8 xl:grid-cols-[1fr_1fr]">
         <SectionBlock title="Job context" icon={applicationIcons.overview}>
@@ -49,16 +50,41 @@ export default async function ApplicationOverviewPage({ params }: { params: Prom
           </div>
         </SectionBlock>
 
-        <SectionBlock title="Team context" icon={applicationIcons.progress}>
-          <div className="grid gap-x-8 md:grid-cols-2">
-            <MetricLine label="Company context" value={String(applicationMeta.company_context ?? "-")} />
-            <MetricLine label="Current situation" value={String(applicationMeta.current_situation ?? "-")} />
-            <MetricLine label="Hiring goal" value={String(applicationMeta.hiring_goal ?? "-")} />
-            <MetricLine label="Team workflow" value={String(applicationMeta.team_workflow ?? "-")} />
-            <MetricLine label="Manager expectations" value={String(applicationMeta.manager_expectations ?? "-")} />
-            <MetricLine label="Success criteria" value={String(applicationMeta.success_criteria ?? "-")} />
-          </div>
-        </SectionBlock>
+        {workflowType === "application" ? (
+          <SectionBlock title="Applications progress" icon={applicationIcons.applications}>
+            <div className="grid gap-x-8 md:grid-cols-2">
+              <MetricLine label="Pipeline generated" value={data.pipeline ? "Yes" : "No"} />
+              <MetricLine label="Apply link" value={data.pipeline ? "Ready" : "Generate pipeline"} />
+              <MetricLine label="Questions" value={data.questions.length} />
+              <MetricLine label="Applications received" value={data.sessions.length} />
+              <MetricLine
+                label="CV parsed"
+                value={data.applicationSessions.filter((s) => s.cvStatus === "Parsed").length}
+              />
+              <MetricLine
+                label="LinkedIn checked"
+                value={data.applicationSessions.filter((s) => s.linkedinStatus === "Verified").length}
+              />
+              <MetricLine
+                label="Responses analyzed"
+                value={data.applicationSessions.filter((s) => s.pipelineScore !== null).length}
+              />
+            </div>
+          </SectionBlock>
+        ) : (
+          <SectionBlock title="Team context" icon={applicationIcons.progress}>
+            <div className="grid gap-x-8 md:grid-cols-2">
+              <MetricLine label="Company context" value={String(applicationMeta.company_context ?? "-")} />
+              <MetricLine label="Current situation" value={String(applicationMeta.current_situation ?? "-")} />
+              <MetricLine label="Hiring goal" value={String(applicationMeta.hiring_goal ?? "-")} />
+              <MetricLine label="Team workflow" value={String(applicationMeta.team_workflow ?? "-")} />
+              <MetricLine label="Previous work" value={String(applicationMeta.previous_team_work ?? "-")} />
+              <MetricLine label="Work samples" value={data.workSamples.length ? `${data.workSamples.length} stored sample${data.workSamples.length > 1 ? "s" : ""}` : String(applicationMeta.work_samples ?? "-")} />
+              <MetricLine label="Manager expectations" value={String(applicationMeta.manager_expectations ?? "-")} />
+              <MetricLine label="Success criteria" value={String(applicationMeta.success_criteria ?? "-")} />
+            </div>
+          </SectionBlock>
+        )}
 
         <SectionBlock title="Main criteria">
           <div className="grid gap-x-8 md:grid-cols-2">
@@ -84,7 +110,7 @@ export default async function ApplicationOverviewPage({ params }: { params: Prom
                   <span>Avg fit {data.progress.avgFit ?? "-"}</span>
                 </div>
                 <div className="mt-4">
-                  <ActionLink href={`/hr/sourcing/${id}`} icon={Search}>Open sourcing results</ActionLink>
+                  <ActionLink href={`/hr/sourcing/${id}/candidates`} icon={Search}>Open sourcing results</ActionLink>
                 </div>
               </div>
             ) : (
@@ -100,7 +126,7 @@ export default async function ApplicationOverviewPage({ params }: { params: Prom
                   <span>{data.questions.length} questions</span>
                 </div>
                 <div className="mt-4 flex gap-3">
-                  <ActionLink href={`/hr/applications/${id}/applications`} icon={Inbox}>Results</ActionLink>
+                  <ActionLink href={`/hr/applications/${id}/applications/results`} icon={Inbox}>Results</ActionLink>
                   <ActionLink href={`/hr/applications/${id}/applications/pipeline`} icon={Link2} variant="secondary">Check pipeline</ActionLink>
                 </div>
               </div>

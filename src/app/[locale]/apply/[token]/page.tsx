@@ -8,11 +8,13 @@ export default async function PublicApplyPage({ params }: { params: Promise<{ to
   const data = await getPipelineSessionByToken(token);
   if (!data) notFound();
 
-  const unavailable = data.session.status === "expired" || data.session.status === "cancelled" || data.session.status === "failed";
+  const unavailable = data.session.status === "expired" || data.session.status === "cancelled" || data.session.status === "failed" || data.session.status === "incomplete";
   const mission = asObject(data.application);
   const missionMeta = asObject(mission.metadata);
   const title = pickString(mission.title, data.pipeline?.name) ?? "Application";
   const teamContext = pickString(missionMeta.team_context, missionMeta.company_context, mission.description);
+  const requireCvUpload = missionMeta.require_cv_upload !== false;
+  const requireLinkedinUrl = missionMeta.require_linkedin_url !== false;
 
   return (
     <main className="min-h-screen bg-background px-4 py-8 text-foreground md:px-8">
@@ -30,7 +32,14 @@ export default async function PublicApplyPage({ params }: { params: Promise<{ to
             <p className="mt-2 text-sm text-foreground/50">This application link is no longer active.</p>
           </div>
         ) : (
-          <PipelineSessionForm token={token} questions={data.questions} status={data.session.status} />
+          <PipelineSessionForm
+            token={token}
+            questions={data.questions}
+            session={data.session}
+            initialResponses={data.responses}
+            requireCvUpload={requireCvUpload}
+            requireLinkedinUrl={requireLinkedinUrl}
+          />
         )}
       </div>
     </main>

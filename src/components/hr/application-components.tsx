@@ -151,9 +151,9 @@ export function LinkedinBadge({ url }: { url?: string | null }) {
       href={href!} 
       target="_blank" 
       rel="noopener noreferrer"
-      onClick={(e) => e.stopPropagation()}
+
       className="flex size-8 items-center justify-center rounded-lg bg-[#0077b5] text-white transition-all hover:bg-[#006097] hover:shadow-sm active:scale-95"
-      title="Open LinkedIn Profile"
+      title={href!}
     >
       <LinkedinIcon className="size-4.5" fill="currentColor" />
     </a>
@@ -215,14 +215,16 @@ export function ApplicationTabs({
   workflowType = "application" 
 }: { 
   applicationId: string; 
-  active: "overview" | "sourcing" | "applications" | "settings";
+  active: "overview" | "sourcing" | "applications" | "settings" | "pipeline" | "sessions" | "results";
   workflowType?: "sourcing" | "application";
 }) {
   const base = workflowType === "sourcing" ? "/hr/sourcing" : "/hr/applications";
   const tabs = [
     { key: "overview", label: "Overview", href: `${base}/${applicationId}` },
     workflowType === "sourcing" && { key: "sourcing", label: "Sourcing", href: `${base}/${applicationId}/candidates` },
-    workflowType === "application" && { key: "applications", label: "Applications", href: `${base}/${applicationId}/applications` },
+    workflowType === "application" && { key: "pipeline", label: "Pipeline", href: `${base}/${applicationId}/applications/pipeline` },
+    workflowType === "application" && { key: "sessions", label: "Sessions", href: `${base}/${applicationId}/applications/sessions` },
+    workflowType === "application" && { key: "results", label: "Application Results", href: `${base}/${applicationId}/applications/results` },
     { key: "settings", label: "Settings", href: `${base}/${applicationId}/settings` },
   ].filter((t): t is { key: string; label: string; href: string } => Boolean(t));
 
@@ -246,21 +248,6 @@ export function SourcingTabs({
         { key: "candidates", label: "Talent Pool", href: `${base}/${applicationId}/candidates` },
         { key: "results", label: "Sourcing Results", href: `${base}/${applicationId}/results` },
         { key: "settings", label: "Settings", href: `${base}/${applicationId}/settings` },
-      ]}
-    />
-  );
-}
-
-export function ApplicationsTabs({ applicationId, active, workflowType = "application" }: { applicationId: string; active: "overview" | "pipeline" | "sessions" | "results"; workflowType?: "sourcing" | "application" }) {
-  const base = workflowType === "sourcing" ? "/hr/sourcing" : "/hr/applications";
-  return (
-    <TabNav
-      active={active}
-      tabs={[
-        { key: "overview", label: "Overview", href: `${base}/${applicationId}/applications` },
-        { key: "pipeline", label: "Pipeline", href: `${base}/${applicationId}/applications/pipeline` },
-        { key: "sessions", label: "Sessions", href: `${base}/${applicationId}/applications/sessions` },
-        { key: "results", label: "Application Results", href: `${base}/${applicationId}/applications/results` },
       ]}
     />
   );

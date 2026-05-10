@@ -4,7 +4,7 @@ export const PROMPT_VERSIONS = {
   sourcing_analysis: "sourcing_v1.1",
   cv_parsing: "cv_v1.0",
   application_analysis: "application_v1.0",
-  pipeline_generation: "pipeline_v1.0",
+  pipeline_generation: "pipeline_v1.1",
 } as const;
 
 /** Scoring versions — increment when scoring formula changes */

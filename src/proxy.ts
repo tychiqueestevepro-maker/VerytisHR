@@ -50,6 +50,8 @@ export async function proxy(request: NextRequest) {
   const isPublic =
     pathWithoutLocale === "/login" ||
     pathWithoutLocale.startsWith("/api/") ||
+    pathWithoutLocale.startsWith("/apply/") ||
+    pathWithoutLocale.startsWith("/jobs/") ||
     pathWithoutLocale.startsWith("/pipeline/session/");
 
   if (!user && !isPublic) {

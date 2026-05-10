@@ -259,6 +259,10 @@ export const PipelineGenerationJsonSchema = {
               type: "object" as const,
               properties: {
                 question_type: { type: "string" as const },
+                time_limit_seconds: { type: "integer" as const },
+                points: { type: "integer" as const },
+                requires_reasoning: { type: "boolean" as const },
+                anti_cheat_level: { type: "string" as const },
                 label: { type: "string" as const },
                 description: { type: "string" as const },
                 placeholder: { type: "string" as const },
@@ -275,7 +279,8 @@ export const PipelineGenerationJsonSchema = {
                 estimated_time_minutes: { type: "integer" as const },
               },
               required: [
-                "question_type", "label", "description", "placeholder", "context",
+                "question_type", "time_limit_seconds", "points", "requires_reasoning",
+                "anti_cheat_level", "label", "description", "placeholder", "context",
                 "skill_tested", "difficulty", "options", "is_required", "scoring_weight",
                 "knockout", "evaluation_criteria", "expected_good_answer_signals",
                 "red_flags", "estimated_time_minutes",

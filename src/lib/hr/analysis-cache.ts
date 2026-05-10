@@ -14,6 +14,7 @@ export function computeAnalysisHash(input: {
   missionData: unknown;
   profileData: unknown;
   linkedinData: unknown;
+  resumeData?: unknown;
   companyResearch?: unknown;
   promptVersion: string;
   scoringVersion: string;
@@ -23,6 +24,7 @@ export function computeAnalysisHash(input: {
     mission: input.missionData,
     profile: input.profileData,
     linkedin: input.linkedinData,
+    resume: input.resumeData ?? null,
     research: input.companyResearch ?? null,
     prompt_version: input.promptVersion,
     scoring_version: input.scoringVersion,

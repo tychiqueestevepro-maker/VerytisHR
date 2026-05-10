@@ -6,7 +6,7 @@ const withNextIntl = createNextIntlPlugin(
 );
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  serverExternalPackages: ["pdf-parse", "pdfjs-dist"],
 };
 
 export default withNextIntl(nextConfig);

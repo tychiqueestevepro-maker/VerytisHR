@@ -30,7 +30,7 @@ export async function POST(request: Request, context: RouteContext) {
     if (!session) throw new Error("Session not found");
 
     const typedSession = asObject(session);
-    if (["cancelled", "expired", "failed"].includes(String(typedSession.status))) {
+    if (["cancelled", "expired", "failed", "completed", "submitted", "analyzed", "incomplete"].includes(String(typedSession.status))) {
       throw new Error("Session is no longer active");
     }
 

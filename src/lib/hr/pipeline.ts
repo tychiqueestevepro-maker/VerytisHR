@@ -14,13 +14,20 @@ import {
 } from "./prompts";
 import { computeApplicationFitScore, computeApplicationTeamFitScore, computeApplicationPipelineScore, scoreLevel } from "./scoring";
 import { computeAnalysisHash, findCachedAnalysis, storeCachedAnalysis } from "./analysis-cache";
-import { asObject, clampScore, pickString, truncateText } from "./utils";
+import { asObject, pickNumber, pickString, truncateText } from "./utils";
+import { getMissionWorkSamples, workSamplePromptItems } from "./work-samples";
+import { scrapeLinkedInProfile, formatScrapedDataForVerification } from "./scraper/linkedin";
 
 const QUESTION_TYPES = new Set([
   "short_text",
+  "short_answer",
   "long_text",
+  "written_answer",
   "single_choice",
   "multiple_choice",
+  "scenario",
+  "prioritization",
+  "problem_solving",
   "number",
   "date",
   "file",
@@ -30,15 +37,88 @@ const QUESTION_TYPES = new Set([
 ]);
 
 const STEP_TYPES = new Set(["application", "screening", "interview", "test", "offer", "custom"]);
+const PRODUCT_QUESTION_TYPES = new Set([
+  "multiple_choice",
+  "short_answer",
+  "written_answer",
+  "scenario",
+  "prioritization",
+  "problem_solving",
+]);
+const ANTI_CHEAT_LEVELS = new Set(["low", "medium", "high"]);
+
+function normalizeQuestionFormat(value: unknown) {
+  const candidate = pickString(value)?.toLowerCase().replace(/-/g, "_");
+  if (!candidate) return null;
+  if (PRODUCT_QUESTION_TYPES.has(candidate)) return candidate;
+  if (candidate === "short_text") return "short_answer";
+  if (candidate === "long_text" || candidate === "role_specific_task") return "written_answer";
+  if (candidate === "single_choice") return "multiple_choice";
+  if (candidate === "prioritization_exercise" || candidate === "account_prioritization") return "prioritization";
+  if (
+    candidate === "code_debugging" ||
+    candidate === "code_review" ||
+    candidate === "architecture_decision" ||
+    candidate === "financial_case" ||
+    candidate === "risk_assessment"
+  ) {
+    return "problem_solving";
+  }
+  if (candidate === "discovery_scenario" || candidate === "objection_handling") return "scenario";
+  return null;
+}
 
 function normalizeQuestionType(value: unknown) {
   const candidate = pickString(value)?.toLowerCase();
+  const format = normalizeQuestionFormat(candidate);
+  if (format) return format;
   return candidate && QUESTION_TYPES.has(candidate) ? candidate : "long_text";
 }
 
 function normalizeStepType(value: unknown) {
   const candidate = pickString(value)?.toLowerCase();
   return candidate && STEP_TYPES.has(candidate) ? candidate : "custom";
+}
+
+function normalizeAntiCheatLevel(value: unknown, requiresReasoning: boolean) {
+  const candidate = pickString(value)?.toLowerCase();
+  if (candidate && ANTI_CHEAT_LEVELS.has(candidate)) return candidate;
+  return requiresReasoning ? "medium" : "low";
+}
+
+function normalizeTimeLimitSeconds(question: Record<string, unknown>, fallback = 180) {
+  const seconds = pickNumber(question.time_limit_seconds);
+  if (seconds) return Math.min(1200, Math.max(30, Math.round(seconds)));
+
+  const minutes = pickNumber(question.estimated_time_minutes);
+  if (minutes) return Math.min(1200, Math.max(30, Math.round(minutes * 60)));
+
+  return fallback;
+}
+
+function questionValidationRules(question: Record<string, unknown>) {
+  const existingRules = asObject(question.validation_rules);
+  const format = normalizeQuestionFormat(question.question_type) ?? normalizeQuestionFormat(existingRules.question_type) ?? "written_answer";
+  const requiresReasoning = question.requires_reasoning === true || existingRules.requires_reasoning === true || (
+    format !== "short_answer" && format !== "multiple_choice"
+  );
+  const timeLimitSeconds = normalizeTimeLimitSeconds(question);
+  const points = Math.min(100, Math.max(1, Math.round(pickNumber(question.points) ?? pickNumber(question.scoring_weight) ?? 10)));
+
+  return {
+    ...existingRules,
+    question_type: format,
+    time_limit_seconds: timeLimitSeconds,
+    points,
+    requires_reasoning: requiresReasoning,
+    anti_cheat_level: normalizeAntiCheatLevel(question.anti_cheat_level, requiresReasoning),
+    context: pickString(question.context),
+    skill_tested: pickString(question.skill_tested),
+    difficulty: pickString(question.difficulty),
+    evaluation_criteria: Array.isArray(question.evaluation_criteria) ? question.evaluation_criteria : [],
+    expected_good_answer_signals: Array.isArray(question.expected_good_answer_signals) ? question.expected_good_answer_signals : [],
+    red_flags: Array.isArray(question.red_flags) ? question.red_flags : [],
+  };
 }
 
 function fallbackPipeline(mission: Record<string, unknown>) {
@@ -48,45 +128,85 @@ function fallbackPipeline(mission: Record<string, unknown>) {
     description: `Contextual assessment pipeline for ${title}.`,
     steps: [
       {
-        name: "Mission fit",
-        description: "Assess motivation and context understanding.",
+        name: "Quick reasoning",
+        description: "Assess fast comprehension and concise judgment.",
         step_type: "screening",
         questions: [
           {
-            question_type: "long_text",
-            label: `Why is this ${title} mission a strong fit for your recent experience?`,
-            description: "Ask for concrete examples from recent roles.",
-            placeholder: "Share 2-3 specific examples.",
-            options: [],
+            question_type: "multiple_choice",
+            time_limit_seconds: 60,
+            points: 10,
+            requires_reasoning: false,
+            anti_cheat_level: "low",
+            label: `What is the most important first signal of success for this ${title} mission?`,
+            description: "Choose the best answer based on the role context.",
+            placeholder: "",
+            options: ["Speed of activity", "Relevant outcome quality", "Number of meetings", "Seniority title match"],
             is_required: true,
-            scoring_weight: 25,
-            validation_rules: { min_words: 80 },
+            scoring_weight: 10,
+            validation_rules: {},
           },
           {
-            question_type: "long_text",
-            label: "Describe a similar challenge you solved and the outcome.",
-            description: "Prioritize measurable outcomes.",
-            placeholder: "Context, action, result.",
+            question_type: "short_answer",
+            time_limit_seconds: 120,
+            points: 10,
+            requires_reasoning: true,
+            anti_cheat_level: "medium",
+            label: "Give one concrete example that shows you can handle this role context.",
+            description: "Keep the answer concise and specific.",
+            placeholder: "Situation, action, outcome.",
             options: [],
             is_required: true,
-            scoring_weight: 30,
-            validation_rules: { min_words: 100 },
+            scoring_weight: 10,
+            validation_rules: { min_words: 40, max_words: 120 },
           },
         ],
       },
       {
-        name: "Practical case",
-        description: "Assess role-specific reasoning.",
+        name: "Contextual case",
+        description: "Assess role-specific reasoning under realistic constraints.",
         step_type: "test",
         questions: [
           {
-            question_type: "long_text",
-            label: "How would you approach your first 30 days in this role?",
-            description: "Evaluate prioritization, communication and delivery plan.",
-            placeholder: "Structure your answer by week or milestone.",
+            question_type: "prioritization",
+            time_limit_seconds: 300,
+            points: 15,
+            requires_reasoning: true,
+            anti_cheat_level: "medium",
+            label: "Prioritize these first-week actions and justify your order.",
+            description: "Rank the actions from highest to lowest impact.",
+            placeholder: "1. ... because ...",
+            options: ["Clarify success metrics", "Review past work samples", "Meet stakeholders", "Ship a quick visible win"],
+            is_required: true,
+            scoring_weight: 15,
+            validation_rules: { min_words: 80 },
+          },
+          {
+            question_type: "scenario",
+            time_limit_seconds: 240,
+            points: 15,
+            requires_reasoning: true,
+            anti_cheat_level: "medium",
+            label: "A teammate disagrees with your proposed next step. How do you handle it?",
+            description: "Evaluate communication, judgment and collaboration.",
+            placeholder: "Explain your response and decision process.",
             options: [],
             is_required: true,
-            scoring_weight: 45,
+            scoring_weight: 15,
+            validation_rules: { min_words: 80 },
+          },
+          {
+            question_type: "problem_solving",
+            time_limit_seconds: 360,
+            points: 20,
+            requires_reasoning: true,
+            anti_cheat_level: "high",
+            label: "Solve this short case: the team is behind target and has limited context. What do you do first?",
+            description: "Evaluate structured thinking and decision quality.",
+            placeholder: "State assumptions, decision, tradeoffs and next action.",
+            options: [],
+            is_required: true,
+            scoring_weight: 20,
             validation_rules: { min_words: 120 },
           },
         ],
@@ -97,9 +217,23 @@ function fallbackPipeline(mission: Record<string, unknown>) {
 
 async function generatePipelineSpec(companyId: string, mission: Record<string, unknown>) {
   const model = HR_CORE_MODEL;
+  const missionMeta = asObject(mission.metadata);
+  const missionId = pickString(mission.id);
+  const storedWorkSamples = missionId
+    ? workSamplePromptItems(await getMissionWorkSamples({ companyId, missionId }))
+    : [];
+  const workSampleText = pickString(missionMeta.work_samples, missionMeta.real_team_material);
+  const workSamples = storedWorkSamples.length
+    ? storedWorkSamples
+    : workSampleText
+      ? [{ type: "real_team_material", content: workSampleText }]
+      : [];
+  const questionTypes = Array.isArray(missionMeta.question_types)
+    ? missionMeta.question_types.map((type) => normalizeQuestionFormat(type) ?? String(type)).filter(Boolean)
+    : [];
   const inputHash = computeAnalysisHash({
     missionData: mission,
-    profileData: null,
+    profileData: { workSamples },
     linkedinData: null,
     promptVersion: PROMPT_VERSIONS.pipeline_generation,
     scoringVersion: "v1",
@@ -118,7 +252,16 @@ async function generatePipelineSpec(companyId: string, mission: Record<string, u
   const ai = await completeHrJson({
     companyId,
     system: PIPELINE_GENERATION_SYSTEM,
-    user: buildPipelineGenerationUserPrompt({ mission }),
+    user: buildPipelineGenerationUserPrompt({
+      mission,
+      teamContext: pickString(missionMeta.team_context, mission.department) ?? undefined,
+      successCriteria: pickString(missionMeta.success_criteria) ?? undefined,
+      seniority: pickString(missionMeta.seniority) ?? undefined,
+      numberOfQuestions: pickNumber(missionMeta.number_of_questions),
+      estimatedTimeMinutes: pickNumber(missionMeta.estimated_time_minutes),
+      questionTypes,
+      workSamples,
+    }),
     schema: PipelineGenerationJsonSchema,
     schemaName: PIPELINE_GENERATION_SCHEMA_NAME,
   });
@@ -144,7 +287,7 @@ async function generatePipelineSpec(companyId: string, mission: Record<string, u
 export async function createMissionPipeline(input: {
   companyId: string;
   applicationId: string;
-  userId: string;
+  userId?: string | null;
 }) {
   const supabase = createSupabaseServiceClient();
   const { data: mission, error: missionError } = await supabase
@@ -157,10 +300,20 @@ export async function createMissionPipeline(input: {
   if (missionError) throw new Error(missionError.message || "Unable to load mission");
   if (!mission) throw new Error("Mission not found");
 
+  const missionMeta = asObject(asObject(mission).metadata);
+  const requestedQuestionCount = Math.min(12, Math.max(1, Math.round(pickNumber(missionMeta.number_of_questions) ?? 10)));
+  const requestedEstimatedTime = pickNumber(missionMeta.estimated_time_minutes);
+  const requestedQuestionTypes = Array.isArray(missionMeta.question_types)
+    ? missionMeta.question_types.map((type) => normalizeQuestionFormat(type) ?? String(type)).filter(Boolean)
+    : [];
   const { model, spec } = await generatePipelineSpec(input.companyId, asObject(mission));
   const settings = {
     generation_model: model,
     difficulty: pickString(asObject(spec).difficulty),
+    requested_number_of_questions: requestedQuestionCount,
+    requested_estimated_time_minutes: requestedEstimatedTime,
+    requested_question_types: requestedQuestionTypes,
+    generated_estimated_total_time_minutes: pickNumber(asObject(spec).estimated_total_time_minutes),
     evaluation_criteria: Array.isArray(asObject(spec).evaluation_criteria)
       ? asObject(spec).evaluation_criteria
       : [],
@@ -171,7 +324,7 @@ export async function createMissionPipeline(input: {
     .insert({
       company_id: input.companyId,
       mission_id: input.applicationId,
-      created_by: input.userId,
+      created_by: input.userId ?? null,
       name: pickString(asObject(spec).name) || `${pickString(asObject(mission).title) || "Mission"} pipeline`,
       description: pickString(asObject(spec).description),
       status: "active",
@@ -187,8 +340,11 @@ export async function createMissionPipeline(input: {
   const rawSteps = asObject(spec).steps;
   const steps: unknown[] = Array.isArray(rawSteps) ? rawSteps : fallbackPipeline(asObject(mission)).steps;
   const insertedSteps = [];
+  let remainingQuestions = requestedQuestionCount;
 
   for (const [stepIndex, rawStep] of steps.entries()) {
+    if (remainingQuestions <= 0) break;
+
     const step = asObject(rawStep);
     const { data: insertedStep, error: stepError } = await supabase
       .from("pipeline_steps")
@@ -209,28 +365,30 @@ export async function createMissionPipeline(input: {
     insertedSteps.push(insertedStep);
 
     const questions = Array.isArray(step.questions) ? step.questions : [];
-    const rows = questions.slice(0, 10).map((rawQuestion, questionIndex) => {
+    const rows = questions.slice(0, remainingQuestions).map((rawQuestion, questionIndex) => {
       const question = asObject(rawQuestion);
+      const validationRules = questionValidationRules(question);
       return {
         company_id: input.companyId,
         pipeline_id: pipeline.id,
         step_id: insertedStep.id,
         position: stepIndex * 100 + questionIndex,
-        question_type: normalizeQuestionType(question.question_type),
+        question_type: normalizeQuestionType(validationRules.question_type),
         label: pickString(question.label) || `Question ${questionIndex + 1}`,
         description: pickString(question.description),
         placeholder: pickString(question.placeholder),
         options: Array.isArray(question.options) ? question.options : [],
         is_required: question.is_required !== false,
-        scoring_weight: typeof question.scoring_weight === "number" ? question.scoring_weight : 0,
+        scoring_weight: pickNumber(question.points) ?? pickNumber(question.scoring_weight) ?? 0,
         knockout: question.knockout === true,
-        validation_rules: asObject(question.validation_rules),
+        validation_rules: validationRules,
       };
     });
 
     if (rows.length > 0) {
       const { error: questionError } = await supabase.from("pipeline_questions").insert(rows);
       if (questionError) throw new Error(questionError.message || "Unable to create pipeline questions");
+      remainingQuestions -= rows.length;
     }
   }
 
@@ -298,7 +456,12 @@ export async function analyzePipelineSession(token: string) {
     throw new Error("Session is no longer active");
   }
 
-  if (session.status !== "submitted" && session.status !== "analyzed") {
+  if (
+    session.status !== "submitted" &&
+    session.status !== "completed" &&
+    session.status !== "flagged" &&
+    session.status !== "analyzed"
+  ) {
     throw new Error("Session must be submitted before analysis");
   }
 
@@ -331,28 +494,85 @@ export async function analyzePipelineSession(token: string) {
   }
 
   try {
-    const [{ data: pipeline }, { data: mission }, { data: candidate }, { data: questions }, { data: responses }] =
-    await Promise.all([
+    const [
+      pipelineResponse,
+      missionResponse,
+      candidateResponse,
+      questionsResponse,
+      responsesResponse,
+      resumeResponse,
+      linkedinResponse,
+      inconsistenciesResponse,
+    ] = await Promise.all([
       supabase.from("pipelines").select("*").eq("id", pipelineId).maybeSingle(),
       session.mission_id
         ? supabase.from("missions").select("*").eq("id", session.mission_id).maybeSingle()
         : Promise.resolve({ data: null }),
       supabase.from("candidates").select("*").eq("id", candidateId).maybeSingle(),
       supabase.from("pipeline_questions").select("*").eq("pipeline_id", pipelineId).order("position", { ascending: true }),
-      supabase
-        .from("candidate_pipeline_responses")
-        .select("*")
-        .eq("pipeline_session_id", sessionId)
-        .order("created_at", { ascending: true }),
+      supabase.from("candidate_pipeline_responses").select("*").eq("pipeline_session_id", sessionId).order("created_at", { ascending: true }),
+      supabase.from("candidate_documents").select("*").eq("candidate_id", candidateId).eq("status", "parsed").order("created_at", { ascending: false }).limit(1).maybeSingle(),
+      supabase.from("linkedin_verifications").select("*").eq("candidate_id", candidateId).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+      supabase.from("candidate_inconsistencies").select("*").eq("candidate_id", candidateId),
     ]);
 
-  const model = HR_CORE_MODEL;
-  const truncatedResponses = truncateText(JSON.stringify(responses, null, 2), 16000);
+    const pipeline = pipelineResponse.data;
+    const mission = missionResponse.data;
+    const candidate = candidateResponse.data;
+    const questions = questionsResponse.data;
+    const responses = responsesResponse.data;
+    const resume = resumeResponse.data;
+    let linkedin = linkedinResponse.data;
+    const inconsistencies = inconsistenciesResponse.data ?? [];
+
+    // --- Automated LinkedIn Scraper Integration with 30-day expiration ---
+    const CACHE_EXPIRATION_DAYS = 30;
+    const isExpired = linkedin && (
+      new Date().getTime() - new Date(pickString(linkedin.created_at) || 0).getTime() > CACHE_EXPIRATION_DAYS * 24 * 60 * 60 * 1000
+    );
+
+    if ((!linkedin || isExpired) && session.candidate_linkedin_url) {
+      if (isExpired) {
+        console.log(`[Analysis] LinkedIn data for ${session.candidate_linkedin_url} is older than ${CACHE_EXPIRATION_DAYS} days. Rescraping...`);
+      } else {
+        console.log(`[Analysis] LinkedIn verification missing for ${session.candidate_linkedin_url}. Attempting automated scrape...`);
+      }
+      
+      const companyMetadata = asObject(mission?.metadata);
+      const linkedInCookie = pickString(companyMetadata.linkedin_session_cookie);
+      
+      const scrapedProfile = await scrapeLinkedInProfile(session.candidate_linkedin_url, linkedInCookie);
+      if (scrapedProfile) {
+        const verificationData = formatScrapedDataForVerification(scrapedProfile);
+        
+        // Update existing or insert new verification
+        const { data: newLinkedin } = await supabase
+          .from("linkedin_verifications")
+          .upsert({
+            company_id: companyId,
+            candidate_id: candidateId,
+            linkedin_url: session.candidate_linkedin_url,
+            ...verificationData,
+            created_at: new Date().toISOString(), // Ensure timestamp is updated
+          }, { onConflict: "company_id,candidate_id,linkedin_url" })
+          .select("*")
+          .maybeSingle();
+        
+        if (newLinkedin) {
+          linkedin = newLinkedin;
+          console.log("[Analysis] Automated LinkedIn scrape successful and cache updated.");
+        }
+      }
+    }
+
+    const model = HR_CORE_MODEL;
+    const truncatedResponses = truncateText(JSON.stringify(responses, null, 2), 16000);
 
   const inputHash = computeAnalysisHash({
     missionData: mission,
     profileData: { candidate, responses: truncatedResponses },
-    linkedinData: null,
+    linkedinData: linkedin,
+    resumeData: resume,
     promptVersion: PROMPT_VERSIONS.application_analysis,
     scoringVersion: SCORING_VERSIONS.pipeline_score,
     model,
@@ -374,9 +594,9 @@ export async function analyzePipelineSession(token: string) {
       user: buildApplicationAnalysisUserPrompt({
         mission,
         candidate,
-        parsedResume: null,
-        linkedinVerification: null,
-        inconsistencies: [],
+        parsedResume: resume,
+        linkedinVerification: linkedin,
+        inconsistencies: inconsistencies,
         pipeline,
         questions,
         responses: truncatedResponses,
@@ -507,7 +727,7 @@ export async function analyzePipelineSession(token: string) {
       .from("pipeline_sessions")
       .update({ status: "failed" })
       .eq("id", sessionId)
-      .eq("status", "submitted");
+      .in("status", ["submitted", "completed", "flagged"]);
 
     throw error;
   }

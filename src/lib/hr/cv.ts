@@ -1,4 +1,6 @@
-import { PDFParse } from "pdf-parse";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import mammoth from "mammoth";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { completeHrJson, HR_FAST_MODEL } from "./openai";
@@ -7,6 +9,9 @@ import { computeAnalysisHash, findCachedAnalysis, storeCachedAnalysis } from "./
 import { asObject, pickString, sanitizeFilename, truncateText } from "./utils";
 
 export const CANDIDATE_CVS_BUCKET = "candidate-cvs";
+
+const nodeRequire = createRequire(import.meta.url);
+let pdfWorkerConfigured = false;
 
 type CandidateDocumentRow = {
   id: string;
@@ -60,10 +65,21 @@ export async function extractTextFromBuffer(input: {
   const filename = input.filename?.toLowerCase() || "";
 
   if (mimeType.includes("pdf") || filename.endsWith(".pdf")) {
+    // Keep pdf-parse out of Next's server bundle so pdf.js resolves its worker from node_modules.
+    const { PDFParse } = nodeRequire("pdf-parse") as typeof import("pdf-parse");
+    if (!pdfWorkerConfigured) {
+      const workerPath = join(dirname(nodeRequire.resolve("pdf-parse")), "pdf.worker.mjs");
+      PDFParse.setWorker(pathToFileURL(workerPath).toString());
+      pdfWorkerConfigured = true;
+    }
+
     const parser = new PDFParse({ data: input.buffer });
-    const result = await parser.getText();
-    await parser.destroy();
-    return result.text.trim();
+    try {
+      const result = await parser.getText();
+      return result.text.trim();
+    } finally {
+      await parser.destroy();
+    }
   }
 
   if (

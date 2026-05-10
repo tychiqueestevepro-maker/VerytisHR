@@ -5,14 +5,52 @@ import { asObject, pickString } from "@/lib/hr/utils";
 
 export const runtime = "nodejs";
 
+function normalizeMissionSlug(value: string) {
+  return value
+    .normalize("NFKD")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 80) || "mission";
+}
+
+async function uniquePublicSlug(
+  supabase: Awaited<ReturnType<typeof getHrContext>>["supabase"],
+  preferred: string,
+) {
+  const base = normalizeMissionSlug(preferred);
+
+  for (let index = 0; index < 25; index += 1) {
+    const candidate = index === 0 ? base : `${base}-${index + 1}`;
+    const { data, error } = await supabase
+      .from("missions")
+      .select("id")
+      .eq("public_slug", candidate)
+      .maybeSingle();
+
+    if (error) throw new Error(error.message || "Unable to reserve application slug");
+    if (!data) return candidate;
+  }
+
+  return `${base}-${crypto.randomUUID().slice(0, 8)}`;
+}
+
 function missionPayload(body: Record<string, unknown>, companyId: string, userId: string) {
   const salaryRange = asObject(body.salary_range);
+  const numberOfQuestions = typeof body.number_of_questions === "number"
+    ? Math.min(12, Math.max(1, Math.round(body.number_of_questions)))
+    : null;
+  const estimatedTimeMinutes = typeof body.estimated_time_minutes === "number"
+    ? Math.min(120, Math.max(5, Math.round(body.estimated_time_minutes)))
+    : null;
   const metadata = {
     team_context: body.team_context ?? null,
     team_workflow: body.team_workflow ?? null,
     company_context: body.company_context ?? null,
     current_situation: body.current_situation ?? null,
     previous_team_work: body.previous_team_work ?? null,
+    work_samples: body.work_samples ?? body.real_team_material ?? null,
     job_objectives: body.job_objectives ?? null,
     must_have_skills: Array.isArray(body.must_have_skills) ? body.must_have_skills : [],
     nice_to_have_skills: Array.isArray(body.nice_to_have_skills) ? body.nice_to_have_skills : [],
@@ -29,11 +67,18 @@ function missionPayload(body: Record<string, unknown>, companyId: string, userId
     disqualifiers: body.disqualifiers ?? null,
     fit_threshold: body.fit_threshold ?? null,
     trust_threshold: body.trust_threshold ?? null,
+    number_of_questions: numberOfQuestions,
+    estimated_time_minutes: estimatedTimeMinutes,
+    question_types: Array.isArray(body.question_types) ? body.question_types.map(String).filter(Boolean) : [],
+    require_cv_upload: body.require_cv_upload !== false,
+    require_linkedin_url: body.require_linkedin_url !== false,
     use_linkedin_verification: body.use_linkedin_verification === true,
     require_cv_coherence: body.require_cv_coherence === true,
     generate_contextual_pipeline: body.generate_contextual_pipeline === true,
     difficulty_level: body.difficulty_level ?? null,
     candidate_link_enabled: body.candidate_link_enabled === true,
+    apply_enabled: body.apply_enabled === true || body.candidate_link_enabled === true,
+    pipeline_generation_mode: pickString(body.pipeline_generation_mode) ?? "dynamic",
     workflow_type: body.workflow_type ?? "application",
     raw_input: body,
   };
@@ -88,9 +133,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Mission title is required" }, { status: 400 });
     }
 
+    const applyEnabled = body.apply_enabled === true || body.candidate_link_enabled === true;
+    const pipelineGenerationMode = pickString(body.pipeline_generation_mode) === "fixed" ? "fixed" : "dynamic";
+    const publicSlug = await uniquePublicSlug(supabase, pickString(body.public_slug, payload.title) ?? payload.title);
+
     const { data, error } = await supabase
       .from("missions")
-      .insert(payload)
+      .insert({
+        ...payload,
+        public_slug: publicSlug,
+        apply_enabled: applyEnabled,
+        pipeline_generation_mode: pipelineGenerationMode,
+      })
       .select("*")
       .single();
 
@@ -103,7 +157,7 @@ export async function POST(request: Request) {
       eventType: "mission_create",
     });
 
-    return NextResponse.json({ mission: data }, { status: 201 });
+    return NextResponse.json({ mission: data, application: data }, { status: 201 });
   } catch (error) {
     const message = messageFromError(error, "Unable to create mission");
     const status = message.includes("Usage limit") ? 402 : statusFromError(error);

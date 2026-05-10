@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { getHrContext } from "@/lib/hr/auth";
 import { asObject, normalizeImportedCandidateName, pickString } from "@/lib/hr/utils";
+import { getMissionWorkSamples } from "./work-samples";
 
 export type ApplicationRow = Record<string, unknown>;
 export type CandidateRow = Record<string, unknown>;
@@ -85,6 +86,20 @@ function missionDisplayStatus(mission: ApplicationRow, candidateCount: number, a
   if (status === "closed" || status === "archived") return "Completed";
   if (candidateCount > 0 && analyzedCount > 0 && analyzedCount < candidateCount) return "Analyzing";
   return "Active";
+}
+
+const COPY_INTEGRITY_EVENTS = new Set(["paste_attempt", "copy_attempt", "cut_attempt", "context_menu_opened", "drag_drop_attempt"]);
+
+function lockedPipelineResponse(response: Record<string, unknown>) {
+  const status = pickString(response.status);
+  return response.is_locked === true || status === "locked" || status === "submitted" || status === "timed_out";
+}
+
+function sessionCompleted(session: Record<string, unknown>, completed: number, total: number) {
+  const status = pickString(session.status);
+  if (status === "submitted" || status === "analyzed" || status === "completed") return true;
+  if (total > 0 && completed >= total) return true;
+  return Boolean(pickString(session.completed_at));
 }
 
 export function statusTone(status: string) {
@@ -552,6 +567,7 @@ export const getApplicationWorkspaceData = cache(async (applicationId: string) =
     pipelineScoreResponse,
     stepResponse,
     questionResponse,
+    workSamplesResponse,
   ] = await Promise.all([
     candidateIds.length
       ? supabase.from("candidate_documents").select("*").eq("company_id", companyId).in("candidate_id", candidateIds)
@@ -577,7 +593,10 @@ export const getApplicationWorkspaceData = cache(async (applicationId: string) =
     pipelineId
       ? supabase.from("pipeline_questions").select("*").eq("company_id", companyId).eq("pipeline_id", pipelineId).order("position", { ascending: true })
       : Promise.resolve({ data: [], error: null }),
+    getMissionWorkSamples({ supabase, companyId, missionId: applicationId }),
   ]);
+
+  const workSamples = Array.isArray(workSamplesResponse) ? workSamplesResponse : [];
 
   for (const response of [
     documentResponse,
@@ -596,22 +615,35 @@ export const getApplicationWorkspaceData = cache(async (applicationId: string) =
   const inconsistenciesByCandidate = byKey(rows(inconsistencyResponse.data), "candidate_id");
   const sessions = rows(sessionResponse.data);
   const sessionIds = sessions.map((session) => pickString(session.id)).filter((id): id is string => Boolean(id));
-  const responseResponse = sessionIds.length
-    ? await supabase
-        .from("candidate_pipeline_responses")
-        .select("*")
-        .eq("company_id", companyId)
-        .in("pipeline_session_id", sessionIds)
-        .order("created_at", { ascending: true })
-    : { data: [], error: null };
+  const [responseResponse, eventResponse] = await Promise.all([
+    sessionIds.length
+      ? supabase
+          .from("candidate_pipeline_responses")
+          .select("*")
+          .eq("company_id", companyId)
+          .in("pipeline_session_id", sessionIds)
+          .order("created_at", { ascending: true })
+      : Promise.resolve({ data: [], error: null }),
+    sessionIds.length
+      ? supabase
+          .from("pipeline_session_events")
+          .select("*")
+          .eq("company_id", companyId)
+          .in("pipeline_session_id", sessionIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
 
   if (responseResponse.error) {
     throw new Error(responseResponse.error.message || "Unable to load application responses");
+  }
+  if (eventResponse.error) {
+    throw new Error(eventResponse.error.message || "Unable to load application events");
   }
 
   const sessionsByCandidate = byKey(sessions, "candidate_id");
   const scoresBySession = byKey(rows(pipelineScoreResponse.data), "pipeline_session_id");
   const responsesBySession = byKey(rows(responseResponse.data), "pipeline_session_id");
+  const eventsBySession = byKey(rows(eventResponse.data), "pipeline_session_id");
   const steps = rows(stepResponse.data);
   const stepsById = new Map(steps.map((step) => [String(step.id), step]));
   const questions = rows(questionResponse.data);
@@ -711,27 +743,92 @@ export const getApplicationWorkspaceData = cache(async (applicationId: string) =
     const candidate = candidatesById.get(candidateId) ?? null;
     const scoreRow = latest(scoresBySession.get(sessionId) ?? [], ["created_at"]);
     const sessionResponses = responsesBySession.get(sessionId) ?? [];
-    const pipelineScore = roundScore(numberValue(scoreRow?.score));
+    const lockedResponses = sessionResponses.filter(lockedPipelineResponse);
+    const sessionEvents = eventsBySession.get(sessionId) ?? [];
+    const pasteAttempts = sessionEvents.filter((event) => COPY_INTEGRITY_EVENTS.has(pickString(event.event_type) ?? "")).length;
+    const tabSwitches = sessionEvents.filter((event) => pickString(event.event_type) === "tab_blur").length;
+    const totalQuestions = questions.length || (numberValue(session.total_questions) ?? 0);
+    const completedQuestions = lockedResponses.length;
+    
+    // Unusable answers detection
+    const responses = sessionResponses.map((response) => {
+      const question = response.question_id ? questionsById.get(String(response.question_id)) : null;
+      const text = pickString(response.response_text) ?? "";
+      const timeSpent = numberValue(response.time_spent_seconds) ?? 0;
+      
+      const isTooShort = text.length > 0 && text.length < 20;
+      const isIncoherent = /^[a-z]{1,2}$/i.test(text) || /^[kjlhg=]{4,}$/i.test(text); // Basic incoherent check
+      const isTooFast = text.length > 0 && timeSpent < 5;
+      
+      return {
+        response,
+        question,
+        questionLabel: pickString(question?.label) ?? "Question",
+        responseText: text || "-",
+        isUnusable: isTooShort || isIncoherent || isTooFast,
+        unusableReason: isTooShort ? "Too short" : isIncoherent ? "Incoherent" : isTooFast ? "Answered too fast" : null,
+      };
+    });
+
+    const unusableCount = responses.filter(r => r.isUnusable).length;
+    const unusableRatio = totalQuestions > 0 ? unusableCount / totalQuestions : 0;
+    const isHighUnusable = unusableRatio >= 0.4;
+
+    const averageTimePerAnswer = completedQuestions
+      ? Math.round(lockedResponses.reduce((sum, response) => sum + (numberValue(response.time_spent_seconds) ?? 0), 0) / completedQuestions)
+      : null;
+
+    const complete = sessionCompleted(session, completedQuestions, totalQuestions);
     const status = pickString(session.status) ?? "opened";
-    const completion = questions.length
-      ? Math.round((sessionResponses.length / questions.length) * 100)
+    
+    // Integrity assessment
+    const reviewNeeded = 
+      session.is_flagged === true || 
+      pasteAttempts > 0 || 
+      tabSwitches >= 3 || 
+      status === "flagged" ||
+      (complete && (averageTimePerAnswer ?? 100) < 15) ||
+      isHighUnusable;
+
+    const pipelineScore = roundScore(numberValue(scoreRow?.score));
+    const finalScore = isHighUnusable ? (pipelineScore !== null && pipelineScore < 15 ? pipelineScore : 15) : pipelineScore;
+
+    const completion = totalQuestions
+      ? Math.round((completedQuestions / totalQuestions) * 100)
       : status === "submitted" || status === "analyzed"
         ? 100
         : 0;
+
     const criteria = asObject(scoreRow?.criteria);
     const candidateMissionMetadata = asObject(candidate?.candidateMission?.metadata);
+    
+    let recommendation = pickString(criteria.recommendation, candidateMissionMetadata.recommendation, candidate?.recommendation) ?? "Review";
+    if (isHighUnusable) {
+      recommendation = "Reject";
+    }
+
     const strengths = Array.isArray(criteria.strengths)
-      ? criteria.strengths.map((item) => String(item)).filter(Boolean)
+      ? criteria.strengths.map((item) => typeof item === "string" ? item : pickString(asObject(item).label, asObject(item).description)).filter((item): item is string => Boolean(item))
       : Array.isArray(candidateMissionMetadata.strengths)
-        ? candidateMissionMetadata.strengths.map((item) => String(item)).filter(Boolean)
-      : pipelineScore !== null && pipelineScore >= 80
+        ? candidateMissionMetadata.strengths.map((item) => typeof item === "string" ? item : pickString(asObject(item).label, asObject(item).description)).filter((item): item is string => Boolean(item))
+      : isHighUnusable
+        ? ["No clear strengths detected from the submitted answers."]
+      : finalScore !== null && finalScore >= 80
         ? ["Strong response quality for the contextual pipeline."]
         : ["Application should be reviewed against the role context."];
+
     const risks = Array.isArray(criteria.risks)
-      ? criteria.risks.map((item) => String(item)).filter(Boolean)
+      ? criteria.risks.map((item) => typeof item === "string" ? item : pickString(asObject(item).label, asObject(item).description)).filter((item): item is string => Boolean(item))
       : Array.isArray(candidateMissionMetadata.risks)
-        ? candidateMissionMetadata.risks.map((item) => String(item)).filter(Boolean)
-      : pipelineScore !== null && pipelineScore < 60
+        ? candidateMissionMetadata.risks.map((item) => typeof item === "string" ? item : pickString(asObject(item).label, asObject(item).description)).filter((item): item is string => Boolean(item))
+      : isHighUnusable
+        ? [
+            "Answers are too short or incoherent",
+            ...(pasteAttempts > 0 ? [`${pasteAttempts} paste/copy attempts detected`] : []),
+            ...(averageTimePerAnswer && averageTimePerAnswer < 15 ? ["Average response time is unusually low"] : []),
+            "Unable to evaluate role fit from submitted answers"
+          ]
+      : finalScore !== null && finalScore < 60
         ? ["Pipeline score is below the target range."]
         : ["No major application risk detected."];
 
@@ -743,28 +840,35 @@ export const getApplicationWorkspaceData = cache(async (applicationId: string) =
       name: candidate?.name ?? pickString(session.candidate_name) ?? "Unnamed applicant",
       subtitle: candidate?.subtitle ?? pickString(session.candidate_email) ?? "-",
       status,
-      responseStatus: status === "submitted" || status === "analyzed" ? "Submitted" : status === "opened" ? "Pending" : status,
-      pipelineScore,
+      responseStatus: complete ? "Completed" : status === "in_progress" ? "In progress" : status === "not_started" || status === "opened" ? "Not started" : status,
+      pipelineScore: finalScore,
       fitScore: candidate?.fitScore ?? null,
+      fitScoreLabel: isHighUnusable ? "Not reliable" : null,
       trustScore: candidate?.trustScore ?? null,
       teamFitScore: candidate?.teamFitScore ?? roundScore(numberValue(criteria.team_fit_score)),
       cvStatus: candidate?.cv.label ?? "Missing",
       linkedinStatus: candidate?.linkedin.label ?? "Missing",
       linkedinCvCoherence: candidate?.linkedinCvCoherence ?? pickString(criteria.linkedin_cv_coherence) ?? "Pending",
+      linkedinUrl: pickString(candidate?.candidate?.linkedin_url, session.candidate_linkedin_url),
       completion,
+      completionLabel: `${completedQuestions}/${totalQuestions || questions.length}`,
+      integrityStatus: reviewNeeded ? "Review needed" : "Clean",
+      pasteAttempts,
+      tabSwitches,
+      isFlagged: session.is_flagged === true,
+      flagReason: pickString(session.flag_reason) || (
+        isHighUnusable ? "Answers appear incomplete or unusable" :
+        (complete && (averageTimePerAnswer ?? 100) < 15) ? "Average answer time is unusually low" :
+        pasteAttempts > 0 ? `${pasteAttempts} paste/copy attempts detected` : null
+      ),
+      averageTimePerAnswer,
       strengths,
       risks,
-      recommendation: pickString(criteria.recommendation, candidateMissionMetadata.recommendation, candidate?.recommendation) ?? "Review",
+      recommendation,
       score: scoreRow,
-      responses: sessionResponses.map((response) => {
-        const question = response.question_id ? questionsById.get(String(response.question_id)) : null;
-        return {
-          response,
-          question,
-          questionLabel: pickString(question?.label) ?? "Question",
-          responseText: pickString(response.response_text) ?? "-",
-        };
-      }),
+      responses,
+      isHighUnusable,
+      analysisStatus: scoreRow ? "Analyzed" : (complete ? "Pending" : "Not submitted"),
     };
   });
 
@@ -775,6 +879,7 @@ export const getApplicationWorkspaceData = cache(async (applicationId: string) =
     workflowType,
     candidates,
     pipeline,
+    workSamples,
     steps,
     questions: questions.map((question) => {
       const step = question.step_id ? stepsById.get(String(question.step_id)) : null;
