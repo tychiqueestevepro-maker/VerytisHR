@@ -17,6 +17,7 @@
     "@parcel/watcher": "^2.5.6",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.104.1",
+    "@swc/core": "^1.15.33",
     "@swc/helpers": "^0.5.21",
     "@tanstack/react-query": "^5.100.5",
     "cheerio": "^1.2.0",
