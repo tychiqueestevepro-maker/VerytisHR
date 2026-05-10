@@ -884,13 +884,20 @@ export const getApplicationWorkspaceData = cache(async (applicationId: string) =
     questions: questions.map((question) => {
       const step = question.step_id ? stepsById.get(String(question.step_id)) : null;
       const stepType = pickString(step?.step_type) ?? "custom";
+      const rules = asObject(question.validation_rules);
+      const timeLimitSeconds = numberValue(rules.time_limit_seconds) ?? 180;
+
       return {
         question,
         step,
         typeLabel: stepType === "test" ? "Technical test" : stepType === "screening" ? "Scenario" : "Written answer",
-        skillTested: pickString(step?.name) ?? "Context awareness",
-        difficulty: pickString(asObject(pipeline?.settings).difficulty) ?? pickString(metadata(asObject(missionResponse.data)).difficulty_level) ?? "Medium",
+        skillTested: pickString(rules.skill_tested, step?.name) ?? "Context awareness",
+        difficulty: pickString(rules.difficulty, asObject(pipeline?.settings).difficulty, metadata(asObject(missionResponse.data)).difficulty_level) ?? "Medium",
         criteria: pickString(question.description) ?? "Clarity, reasoning, context awareness",
+        timeLimit: timeLimitSeconds >= 60 ? `${Math.round(timeLimitSeconds / 60)} min` : `${timeLimitSeconds}s`,
+        points: numberValue(rules.points) ?? numberValue(question.scoring_weight) ?? 10,
+        requiresReasoning: rules.requires_reasoning === true,
+        antiCheatLevel: pickString(rules.anti_cheat_level) ?? "low",
       };
     }),
     sessions,
