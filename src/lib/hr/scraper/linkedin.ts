@@ -75,6 +75,7 @@ export function parseDateTextToIso(value: string): string | null {
   return `${year}-${month}`;
 }
 
+/**
  * Main scraping function using Puppeteer
  * Optimized for environments like Railway or Docker
  */

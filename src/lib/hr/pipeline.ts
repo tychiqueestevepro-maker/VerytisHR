@@ -259,7 +259,7 @@ async function generatePipelineSpec(companyId: string, mission: Record<string, u
       seniority: pickString(missionMeta.seniority) ?? undefined,
       numberOfQuestions: pickNumber(missionMeta.number_of_questions),
       estimatedTimeMinutes: pickNumber(missionMeta.estimated_time_minutes),
-      questionTypes,
+      questionTypes: Array.isArray(questionTypes) ? questionTypes : undefined,
       workSamples,
     }),
     schema: PipelineGenerationJsonSchema,
@@ -541,7 +541,7 @@ export async function analyzePipelineSession(token: string) {
       const companyMetadata = asObject(mission?.metadata);
       const linkedInCookie = pickString(companyMetadata.linkedin_session_cookie);
       
-      const scrapedProfile = await scrapeLinkedInProfile(session.candidate_linkedin_url, linkedInCookie);
+      const scrapedProfile = await scrapeLinkedInProfile(pickString(session.candidate_linkedin_url) ?? "", linkedInCookie);
       if (scrapedProfile) {
         const verificationData = formatScrapedDataForVerification(scrapedProfile);
         
