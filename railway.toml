@@ -3,7 +3,7 @@ builder = "nixpacks"
 installCommand = "npm install --legacy-peer-deps"
 
 [phases.setup]
-nixPkgs = ["...", "google-chrome-stable"]
+nixPkgs = ["...", "google-chrome"]
 
 [phases.install]
 dependsOn = ["setup"]
