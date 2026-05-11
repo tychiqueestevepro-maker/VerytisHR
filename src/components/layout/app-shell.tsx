@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { ChevronDown, ChevronLeft, ChevronRight, Link2, LogOut, Users } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Coins, Link2, LogOut, Users } from "lucide-react";
 import { Link, usePathname } from "@/i18n/routing";
 import { useState, type ComponentProps, type ComponentType, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
@@ -34,6 +34,12 @@ type AppShellUser = {
     role?: "owner" | "admin" | "recruiter" | "reviewer" | "member" | string | null;
   } | null;
 };
+
+type SidebarBilling = {
+  creditsBalance: number;
+  maxMonthlyCredits: number;
+  planId: string | null;
+} | null;
 
 const NAV_STRUCTURE: NavItem[] = [
   {
@@ -84,11 +90,13 @@ const NAV_STRUCTURE: NavItem[] = [
 export function AppShell({ 
   children, 
   user, 
-  applications = [] 
+  applications = [],
+  billing = null,
 }: { 
   children: ReactNode; 
   user: AppShellUser; 
   applications?: any[];
+  billing?: SidebarBilling;
 }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
@@ -265,6 +273,45 @@ export function AppShell({
               <HelpIcon className="size-[18px] shrink-0" />
               {!collapsed ? <span>{tNav("help")}</span> : null}
             </Link>
+
+            {/* Credit Quota Widget */}
+            {!collapsed && billing && (
+              <Link
+                href="/settings/billing"
+                className="group block rounded-xl border border-border/50 bg-secondary/30 p-3 transition hover:bg-secondary/50 hover:border-border"
+              >
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-foreground/35">
+                    <Coins className="size-3" />
+                    Usage quotas
+                  </div>
+                  <span className="text-[11px] font-black text-foreground/70">
+                    {billing.creditsBalance}
+                    <span className="text-foreground/25 font-medium"> / {billing.maxMonthlyCredits}</span>
+                  </span>
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-border/50">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-pink-500 to-fuchsia-500 transition-all duration-500"
+                    style={{ width: `${Math.min(100, Math.round((billing.creditsBalance / Math.max(1, billing.maxMonthlyCredits)) * 100))}%` }}
+                  />
+                </div>
+                {billing.planId && (
+                  <p className="mt-1.5 text-[10px] font-medium text-foreground/25 capitalize">
+                    {billing.planId.replace(/_/g, " ")}
+                  </p>
+                )}
+              </Link>
+            )}
+            {collapsed && billing && (
+              <Link
+                href="/settings/billing"
+                className="flex h-9 items-center justify-center rounded-[6px] text-foreground/45 transition hover:bg-secondary hover:text-foreground"
+                title={`${billing.creditsBalance} / ${billing.maxMonthlyCredits} usage`}
+              >
+                <Coins className="size-[18px]" />
+              </Link>
+            )}
             <div className="border-t border-border pt-4">
               <div className="flex items-center gap-3 px-2">
                 <div className={cn(

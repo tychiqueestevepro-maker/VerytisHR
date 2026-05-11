@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { getHrContext } from "@/lib/hr/auth";
+import { getMonthlyUsageSummary } from "@/lib/hr/usage";
 import { asObject, formatDate, pickNumber, pickString, relativeTime } from "@/lib/hr/utils";
 
 type Row = Record<string, unknown>;
@@ -47,6 +48,8 @@ export const getSettingsWorkspaceData = cache(async () => {
     creditResponse,
     limitResponse,
     linkedinAccountResponse,
+    planResponse,
+    monthlyUsage,
   ] = await Promise.all([
     supabase
       .from("companies")
@@ -89,6 +92,12 @@ export const getSettingsWorkspaceData = cache(async () => {
       .select("id, email, status, updated_at")
       .eq("company_id", companyId)
       .order("updated_at", { ascending: false }),
+    supabase
+      .from("plans")
+      .select("*")
+      .eq("id", pickString(( await supabase.from("companies").select("plan_id").eq("id", companyId).maybeSingle() ).data?.plan_id) ?? "__none__")
+      .maybeSingle(),
+    getMonthlyUsageSummary(companyId),
   ]);
 
   for (const response of [
@@ -116,6 +125,7 @@ export const getSettingsWorkspaceData = cache(async () => {
   const credits = rows(creditResponse.data);
   const limits = asObject(limitResponse.data);
   const linkedinAccounts = linkedinAccountResponse.error ? [] : rows(linkedinAccountResponse.data);
+  const plan = planResponse.error ? null : asObject(planResponse.data);
   const activeMissions = missions.filter((mission) => pickString(mission.status) === "open").length;
   const archivedMissions = missions.filter((mission) => {
     const status = pickString(mission.status);
@@ -166,6 +176,9 @@ export const getSettingsWorkspaceData = cache(async () => {
       locale: pickString(company.locale) ?? "fr",
       billingEmail: pickString(company.billing_email) ?? "-",
       plan: pickString(company.plan) ?? "free",
+      planId: pickString(company.plan_id) ?? null,
+      planLabel: plan ? pickString(plan.label) ?? "Free" : "Free",
+      planDescription: plan ? pickString(plan.description) ?? null : null,
       status: pickString(company.status) ?? "active",
       creditsBalance: pickNumber(company.credits_balance) ?? 0,
       createdAt: formatDate(company.created_at),
@@ -214,7 +227,25 @@ export const getSettingsWorkspaceData = cache(async () => {
         maxPipelineSessions: pickNumber(limits.max_pipeline_sessions) ?? 50,
         maxPipelineResponseAnalyses: pickNumber(limits.max_pipeline_response_analyses) ?? 50,
         maxPipelineResponses: pickNumber(limits.max_pipeline_responses) ?? 100,
+        // New plan-based limits
+        maxRecruiterSeats: pickNumber(limits.max_recruiter_seats) ?? 1,
+        maxSourcingFlows: pickNumber(limits.max_sourcing_flows) ?? 2,
+        maxApplicationFlows: pickNumber(limits.max_application_flows) ?? 2,
+        maxSourcingProfiles: pickNumber(limits.max_sourcing_profiles) ?? 50,
+        maxSourcingAnalyses: pickNumber(limits.max_sourcing_analyses) ?? 50,
+        maxCompanyResearches: pickNumber(limits.max_company_researches) ?? 20,
+        maxApplications: pickNumber(limits.max_applications) ?? 75,
+        maxCvParses: pickNumber(limits.max_cv_parses) ?? 75,
+        maxApplicationAnalyses: pickNumber(limits.max_application_analyses) ?? 75,
+        maxMonthlyCredits: pickNumber(limits.max_monthly_credits) ?? 200,
+        periodStart: pickString(limits.current_period_start) ? formatDate(limits.current_period_start) : "-",
+        periodEnd: pickString(limits.current_period_end) ? formatDate(limits.current_period_end) : "-",
         resetAt: pickString(limits.reset_at) ? formatDate(limits.reset_at) : "-",
+      },
+      monthly: {
+        summary: monthlyUsage.summary,
+        totalCredits: monthlyUsage.totalCredits,
+        periodStart: monthlyUsage.periodStart,
       },
       credits: credits.map((credit) => ({
         id: pickString(credit.id) ?? "",
