@@ -47,10 +47,11 @@
     "create_test": "Créer Test",
     "candidate_links": "Liens Candidats",
     "responses": "Réponses",
-    "company_profile": "Profil Entreprise",
+    "company_profile": "Entreprise",
+    "profile": "Profil",
     "team": "Équipe",
     "criteria": "Critères",
-    "billing_credits": "Facturation / Crédits"
+    "billing_credits": "Facturation"
   },
   "FlowCommandBar": {
     "flow": "Focus",

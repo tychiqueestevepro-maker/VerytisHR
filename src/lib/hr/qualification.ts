@@ -11,6 +11,7 @@ import {
 import { computeApplicationFitScore, computeApplicationTrustScore, computeApplicationTeamFitScore, deriveApplicationRecommendation, scoreLevel } from "./scoring";
 import { computeAnalysisHash, findCachedAnalysis, storeCachedAnalysis } from "./analysis-cache";
 import { asObject, clampScore, pickString, truncateText } from "./utils";
+import { scrapeLinkedInProfile, formatScrapedDataForVerification } from "./scraper/linkedin";
 
 type CandidateRow = {
   id: string;
@@ -340,7 +341,50 @@ export async function analyzeCandidateForMission(input: {
 
   const mission = missionData as ApplicationRow;
   const resume = parsedResumeFields(documentData);
-  const linkedin = verificationData ? latestVerificationFields(verificationData) : null;
+  let linkedin = verificationData ? latestVerificationFields(verificationData) : null;
+
+  // --- Automated LinkedIn Scraper Integration ---
+  const CACHE_EXPIRATION_DAYS = 30;
+  const isExpired = verificationData && (
+    new Date().getTime() - new Date(pickString(asObject(verificationData).created_at) || 0).getTime() > CACHE_EXPIRATION_DAYS * 24 * 60 * 60 * 1000
+  );
+
+  if ((!linkedin || isExpired) && candidate.linkedin_url) {
+    console.log(`[Qualification] LinkedIn verification missing or expired for ${candidate.linkedin_url}. Scraping...`);
+    
+    const { data: companyRecord } = await supabase
+      .from("companies")
+      .select("metadata")
+      .eq("id", input.companyId)
+      .single();
+      
+    const companyMetadata = asObject(companyRecord?.metadata);
+    const linkedInCookie = pickString(companyMetadata.linkedin_session_cookie);
+    
+    if (linkedInCookie) {
+      const scrapedProfile = await scrapeLinkedInProfile(candidate.linkedin_url, linkedInCookie);
+      if (scrapedProfile) {
+        const verificationData = formatScrapedDataForVerification(scrapedProfile);
+        const { data: newLinkedin } = await supabase
+          .from("linkedin_verifications")
+          .upsert({
+            company_id: input.companyId,
+            candidate_id: input.candidateId,
+            linkedin_url: candidate.linkedin_url,
+            ...verificationData,
+            created_at: new Date().toISOString(),
+          }, { onConflict: "company_id,candidate_id,linkedin_url" })
+          .select("*")
+          .maybeSingle();
+        
+        if (newLinkedin) {
+          linkedin = latestVerificationFields(newLinkedin);
+          console.log("[Qualification] LinkedIn scrape successful.");
+        }
+      }
+    }
+  }
+
   const heuristicIssues = heuristicInconsistencies({ candidate, resume, linkedin });
   const { model, analysis, inputHash } = await generateCandidateAnalysis({
     companyId: input.companyId,
@@ -354,6 +398,15 @@ export async function analyzeCandidateForMission(input: {
     linkedin,
     inconsistencies: heuristicIssues,
   });
+
+  console.log(`[Analysis] Final check before AI for candidate ${input.candidateId}:`);
+  console.log(` - CV Text available: ${!!resume.rawText} (${resume.rawText?.length || 0} chars)`);
+  console.log(` - LinkedIn data available: ${!!linkedin}`);
+  if (linkedin) {
+    console.log(` - LinkedIn Profile Name: ${linkedin.profileName}`);
+    const experiences = (linkedin.data as any)?.experiences;
+    console.log(` - LinkedIn Experiences: ${Array.isArray(experiences) ? experiences.length : 0}`);
+  }
 
   // --- Rule 3: scores computed by backend from 0-5 criteria ---
   const criteriaScores = asObject(asObject(analysis).criteria_scores) as Record<string, number>;

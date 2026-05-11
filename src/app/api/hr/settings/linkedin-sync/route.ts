@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getHrContext, statusFromError, messageFromError } from "@/lib/hr/auth";
-import { pickString } from "@/lib/hr/utils";
+import { asObject, pickString } from "@/lib/hr/utils";
 
 /**
  * API Route: Sync LinkedIn Cookie from Extension
@@ -11,43 +11,115 @@ import { pickString } from "@/lib/hr/utils";
  */
 export async function POST(request: Request) {
   try {
-    const { supabase, companyId } = await getHrContext({ recruiter: true });
+    const { supabase, companyId, authUserId } = await getHrContext({ recruiter: true });
     const body = await request.json();
     const cookie = pickString(body.cookie);
+    const name = pickString(body.name);
+    const image = pickString(body.image);
+    const html = pickString(body.html);
 
     if (!cookie) {
       return NextResponse.json({ error: "Cookie missing" }, { status: 400 });
     }
 
-    // Store the cookie in the company metadata or a dedicated encrypted field
-    // For now, we'll use a specific field in the company metadata
+    // On récupère les métadonnées actuelles pour les fusionner
     const { data: company } = await supabase
       .from("companies")
       .select("metadata")
       .eq("id", companyId)
       .single();
 
-    const nextMetadata = {
-      ...(company?.metadata || {}),
-      linkedin_session_cookie: cookie,
+    const currentMetadata = asObject(company?.metadata);
+    // 1. On prépare le cookie de session (li_at ou chaîne complète document.cookie)
+    // Pour une fiabilité maximale sur le serveur, envoyer tout document.cookie depuis l'extension
+    const normalizedCookie = cookie.includes("li_at=") ? cookie : `li_at=${cookie}`;
+
+    const nextMetadata: any = {
+      ...currentMetadata,
+      linkedin_session_cookie: normalizedCookie,
       linkedin_cookie_updated_at: new Date().toISOString(),
     };
 
-    const { error: updateError } = await supabase
+    if (name) nextMetadata.linkedin_account_name = name;
+    if (image) nextMetadata.linkedin_account_image = image;
+    if (html) nextMetadata.last_scraped_html = html;
+
+    // 1. Mise à jour de l'entreprise
+    const { error: companyUpdateError } = await supabase
       .from("companies")
       .update({ metadata: nextMetadata })
       .eq("id", companyId);
 
-    if (updateError) throw updateError;
+    // 2. Mise à jour de l'utilisateur (Fallback)
+    const { error: userUpdateError } = await supabase
+      .from("users")
+      .update({ metadata: nextMetadata })
+      .eq("id", authUserId);
+
+    if (companyUpdateError && userUpdateError) {
+      return NextResponse.json({ 
+        error: "Impossible d'enregistrer les données"
+      }, { status: 500 });
+    }
 
     return NextResponse.json({ 
       success: true, 
-      message: "LinkedIn session synchronized" 
+      message: "LinkedIn session synchronized",
+      identity: { 
+        name: nextMetadata.linkedin_account_name, 
+        image: nextMetadata.linkedin_account_image 
+      } 
     });
 
   } catch (caught) {
+    console.error("[LinkedInSync] Sync failed:", caught);
+    const status = statusFromError(caught);
+    
+    // On essaie de récupérer le maximum d'infos sur l'erreur
+    let errorMessage = "Unable to sync LinkedIn cookie";
+    if (caught instanceof Error) errorMessage = caught.message;
+    else if (typeof caught === "object" && caught !== null) {
+      errorMessage = (caught as any).message || (caught as any).error_description || JSON.stringify(caught);
+    }
+
     return NextResponse.json(
-      { error: messageFromError(caught, "Unable to sync LinkedIn cookie") },
+      { 
+        error: errorMessage, 
+        caught: caught,
+        stack: caught instanceof Error ? caught.stack : undefined 
+      },
+      { status }
+    );
+  }
+}
+
+export async function DELETE() {
+  try {
+    const { supabase, companyId } = await getHrContext({ recruiter: true });
+
+    const { data: company } = await supabase
+      .from("companies")
+      .select("metadata")
+      .eq("id", companyId)
+      .single();
+
+    const metadata = asObject(company?.metadata);
+    delete metadata.linkedin_session_cookie;
+    delete metadata.linkedin_cookie_updated_at;
+    delete metadata.linkedin_account_name;
+    delete metadata.linkedin_account_image;
+
+    const { error: updateError } = await supabase
+      .from("companies")
+      .update({ metadata })
+      .eq("id", companyId);
+
+    if (updateError) throw updateError;
+
+    return NextResponse.json({ success: true, message: "LinkedIn session revoked" });
+  } catch (caught) {
+    return NextResponse.json(
+      { error: messageFromError(caught, "Unable to revoke LinkedIn session") },
       { status: statusFromError(caught) }
     );
   }

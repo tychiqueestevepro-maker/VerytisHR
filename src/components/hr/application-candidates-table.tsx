@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Brain, BriefcaseBusiness, Building2, ExternalLink, Loader2, SearchCheck, Target, Trophy, Upload, X } from "lucide-react";
+import { ArrowUpRight, Brain, BriefcaseBusiness, Building2, ExternalLink, Loader2, SearchCheck, Target, Trophy, Upload, X } from "lucide-react";
 import { Link, useRouter } from "@/i18n/routing";
-import { LinkedinBadge, ScoreBadge, StatusBadge } from "@/components/hr/application-components";
+import { Avatar, LinkedInLink, ScoreBadge, StatusBadge } from "@/components/hr/application-components";
+import { cn } from "@/lib/utils";
 
 export type CandidateTableRow = {
   id: string;
@@ -32,35 +33,6 @@ const FILTERS = [
 ] as const;
 
 type FilterKey = (typeof FILTERS)[number]["key"];
-
-function initials(name: string) {
-  const parts = name.split(/\s+/).filter(Boolean);
-  return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "?";
-}
-
-function CandidateAvatar({ name, imageUrl, linkedinUrl }: { name: string; imageUrl?: string | null; linkedinUrl?: string | null }) {
-  const [failed, setFailed] = useState(false);
-  const hasLinkedIn = Boolean(linkedinUrl);
-  const src = imageUrl ? `/api/media/proxy?url=${encodeURIComponent(imageUrl)}` : null;
-
-  if (hasLinkedIn && src && !failed) {
-    return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={src}
-        alt=""
-        className="size-8 rounded-full border border-border object-cover"
-        onError={() => setFailed(true)}
-      />
-    );
-  }
-
-  return (
-    <div className="flex size-8 shrink-0 items-center justify-center rounded-full border border-border bg-secondary text-xs font-semibold text-foreground/55">
-      {initials(name)}
-    </div>
-  );
-}
 
 function CandidateSidePanel({
   candidate,
@@ -420,16 +392,31 @@ export function ApplicationCandidatesTable({
               </option>
             ))}
           </select>
+          
+          <div className="ml-4 flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="select-all"
+              checked={allSelected}
+              onChange={toggleAll}
+              className="size-4 accent-pink-500 cursor-pointer rounded border-gray-300"
+            />
+            <label htmlFor="select-all" className="text-xs font-medium text-foreground/45 cursor-pointer">
+              Select all
+            </label>
+          </div>
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <Link
-            href={importHref}
-            className="inline-flex h-8 items-center gap-2 rounded-md border border-border px-2.5 text-xs font-medium text-foreground/65 transition hover:bg-secondary hover:text-foreground"
+          <button
+            type="button"
+            onClick={analyzeSelected}
+            disabled={isAnalyzing}
+            className="inline-flex h-8 items-center gap-2 rounded-md border border-pink-200 bg-pink-500 px-3 text-xs font-bold text-white shadow-sm transition hover:bg-pink-600 disabled:pointer-events-none disabled:opacity-50"
           >
-            <Upload className="size-3.5" />
-            Import profiles
-          </Link>
+            {isAnalyzing ? <Loader2 className="size-3.5 animate-spin" /> : <Brain className="size-3.5" />}
+            Run AI analysis
+          </button>
           <button
             type="button"
             onClick={prepareLinkedInVerification}
@@ -437,107 +424,119 @@ export function ApplicationCandidatesTable({
             className="inline-flex h-8 items-center gap-2 rounded-md border border-border px-2.5 text-xs font-medium text-foreground/65 transition hover:bg-secondary hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
           >
             {isPreparingLinkedIn ? <Loader2 className="size-3.5 animate-spin" /> : <SearchCheck className="size-3.5" />}
-            Run LinkedIn verification
+            Verify LinkedIn
           </button>
-          <button
-            type="button"
-            onClick={analyzeSelected}
-            disabled={isAnalyzing}
-            className="inline-flex h-8 items-center gap-2 rounded-md border border-border px-2.5 text-xs font-medium text-foreground/65 transition hover:bg-secondary hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+          <Link
+            href={importHref}
+            className="inline-flex h-8 items-center gap-2 rounded-md border border-border px-2.5 text-xs font-medium text-foreground/65 transition hover:bg-secondary hover:text-foreground"
           >
-            {isAnalyzing ? <Loader2 className="size-3.5 animate-spin" /> : <Brain className="size-3.5" />}
-            Analyze selected
-          </button>
+            <Upload className="size-3.5" />
+            Import
+          </Link>
           <button
             type="button"
             onClick={deleteSelected}
             disabled={isAnalyzing || !selected.size}
             className="inline-flex h-8 items-center gap-2 rounded-md border border-rose-200 bg-rose-50 px-2.5 text-xs font-medium text-rose-700 transition hover:bg-rose-100 disabled:pointer-events-none disabled:opacity-50"
           >
-            Delete selected
+            Delete
           </button>
-          <Link
-            href={resultsHref}
-            className="inline-flex h-8 items-center gap-2 rounded-md border border-border px-2.5 text-xs font-medium text-foreground/65 transition hover:bg-secondary hover:text-foreground"
-          >
-            <Trophy className="size-3.5" />
-            View sourcing results
-          </Link>
         </div>
       </div>
 
       {message ? <p className="text-sm text-foreground/55">{message}</p> : null}
 
-      <div className="overflow-x-auto border-y border-border">
-        <table className="w-full min-w-[1120px] border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-border bg-secondary/40 text-left text-[11px] uppercase tracking-[0.16em] text-foreground/40">
-              <th className="w-10 px-3 py-3 font-medium">
-                <input
-                  type="checkbox"
-                  checked={allSelected}
-                  onChange={toggleAll}
-                  className="size-4 accent-foreground cursor-pointer"
-                />
-              </th>
-              <th className="px-3 py-3 font-medium">Name</th>
-              <th className="px-3 py-3 font-medium">Current role</th>
-              <th className="px-3 py-3 font-medium">Current company</th>
-              <th className="px-3 py-3 font-medium">LinkedIn</th>
-              <th className="px-3 py-3 text-right font-medium">Fit score</th>
-              <th className="px-3 py-3 text-right font-medium">Opportunity</th>
-              <th className="px-3 py-3 font-medium">Signals</th>
-              <th className="px-3 py-3 font-medium">Recommendation</th>
-              <th className="px-3 py-3 text-right font-medium">Action</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border/70">
-            {filteredCandidates.map((candidate) => (
-              <tr key={candidate.id} className="transition hover:bg-secondary/35">
-                <td className="px-3 py-4">
-                  <input
-                    type="checkbox"
-                    checked={selected.has(candidate.id)}
-                    onChange={() => toggle(candidate.id)}
-                    className="size-4 accent-foreground"
-                  />
-                </td>
-                <td className="px-3 py-4">
-                  <div className="flex items-center gap-3">
-                    <CandidateAvatar name={candidate.name} imageUrl={candidate.profileImageUrl} linkedinUrl={candidate.linkedinUrl} />
-                    <div className="font-medium text-foreground">{candidate.name}</div>
+      <div className="flex flex-col gap-3">
+        {filteredCandidates.map((candidate) => (
+          <div
+            key={candidate.id}
+            className={cn(
+              "group relative flex items-center gap-6 rounded-2xl border border-white/40 bg-white/40 p-4 pr-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] backdrop-blur-md transition-all duration-300 hover:border-pink-500/20 hover:shadow-[0_20px_40px_rgba(236,72,153,0.08)] cursor-pointer",
+              selected.has(candidate.id) && "border-pink-500/30 bg-pink-500/[0.02]"
+            )}
+            onClick={() => setActiveCandidateId(candidate.id)}
+          >
+            {/* Hover Gradient */}
+            <div className="absolute -inset-px rounded-2xl bg-gradient-to-r from-pink-500/5 via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100 pointer-events-none" />
+
+            <div className="relative flex items-center pr-2 z-10" onClick={(e) => e.stopPropagation()}>
+              <input
+                type="checkbox"
+                checked={selected.has(candidate.id)}
+                onChange={() => toggle(candidate.id)}
+                className="size-5 accent-pink-500 cursor-pointer rounded border-gray-300 transition-transform active:scale-90"
+              />
+            </div>
+
+            <div className="relative flex flex-1 items-center gap-8">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-4">
+                  <Avatar src={candidate.profileImageUrl} name={candidate.name} size="md" />
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-base font-bold text-foreground group-hover:text-pink-600 transition-colors truncate">
+                      {candidate.name}
+                    </h3>
+                    <p className="text-[10px] text-foreground/40 font-bold uppercase tracking-wider truncate max-w-[350px]">
+                      {candidate.subtitle}
+                    </p>
                   </div>
-                </td>
-                <td className="px-3 py-4 text-foreground/65">{candidate.currentRole}</td>
-                <td className="px-3 py-4 text-foreground/65">{candidate.currentCompany}</td>
-                <td className="px-3 py-4">
-                  <LinkedinBadge url={candidate.linkedinUrl} />
-                </td>
-                <td className="px-3 py-4 text-right"><ScoreBadge value={candidate.fitScore} /></td>
-                <td className="px-3 py-4 text-right"><ScoreBadge value={candidate.opportunityScore} /></td>
-                <td className="max-w-xs px-3 py-4 text-foreground/55">{candidate.signals[0] ?? "-"}</td>
-                <td className="px-3 py-4"><StatusBadge>{candidate.recommendation}</StatusBadge></td>
-                <td className="px-3 py-4 text-right">
-                  <button
-                    type="button"
-                    onClick={() => setActiveCandidateId(candidate.id)}
-                    className="inline-flex h-8 items-center rounded-md border border-border px-2.5 text-xs font-medium text-foreground/70 transition hover:bg-secondary hover:text-foreground"
-                  >
-                    Open
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {!filteredCandidates.length ? (
-              <tr>
-                <td colSpan={10} className="px-3 py-12 text-center text-sm text-foreground/45">
-                  No candidates match this filter.
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
+                </div>
+                
+                <div className="flex items-center gap-3 mt-1.5 text-[10px] text-foreground/30 font-bold uppercase tracking-widest">
+                  {(candidate.fitScore !== null || candidate.opportunityScore !== null) && (
+                    <>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <StatusBadge>{candidate.recommendation || "Pending"}</StatusBadge>
+                      </div>
+                      <span className="text-foreground/10 shrink-0">•</span>
+                    </>
+                  )}
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <BriefcaseBusiness className="size-3 text-foreground/20 shrink-0" />
+                    <span className="truncate max-w-[300px]">{candidate.currentRole} at {candidate.currentCompany}</span>
+                  </div>
+                  {(candidate.signals?.[0] || candidate.fitScore !== null) && (
+                    <>
+                      <span className="text-foreground/10 shrink-0">•</span>
+                      <div className="max-w-[300px] truncate italic text-foreground/45 font-medium">
+                        {candidate.signals[0] || "Analysis completed"}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="relative flex items-center gap-8 shrink-0 pr-4 z-10">
+              <div className="flex items-center gap-4" onClick={(e) => e.stopPropagation()}>
+                <LinkedInLink url={candidate.linkedinUrl} />
+              </div>
+
+              <div className="flex items-center gap-6 pl-6 border-l border-black/[0.03]">
+                <div className="flex flex-col items-end justify-center min-w-[70px]">
+                  <span className="text-[9px] text-foreground/25 font-black uppercase tracking-[0.15em] mb-1">Fit Score</span>
+                  <ScoreBadge value={candidate.fitScore} />
+                </div>
+                <div className="flex flex-col items-end justify-center min-w-[70px]">
+                  <span className="text-[9px] text-foreground/25 font-black uppercase tracking-[0.15em] mb-1">Opportunity</span>
+                  <ScoreBadge value={candidate.opportunityScore} />
+                </div>
+              </div>
+
+              <div className="absolute right-[-24px] top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-x-2 group-hover:translate-x-0">
+                <ArrowUpRight className="size-5 text-pink-500" />
+              </div>
+            </div>
+          </div>
+        ))}
+        
+        {!filteredCandidates.length ? (
+          <div className="py-12 text-center text-sm text-foreground/45 bg-white/20 rounded-2xl border border-dashed border-white/40">
+            No candidates match this filter.
+          </div>
+        ) : null}
       </div>
+
       <CandidateSidePanel candidate={activeCandidate} onClose={() => setActiveCandidateId(null)} />
     </div>
   );

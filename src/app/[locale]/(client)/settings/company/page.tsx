@@ -22,17 +22,10 @@ export default async function CompanySettingsPage() {
       <div className="grid gap-8 xl:grid-cols-2">
         <SectionBlock title="Identity" icon={Building2}>
           <MetricLine label="Company name" value={company.name} />
-          <MetricLine label="Legal name" value={company.legalName} />
-          <MetricLine label="Slug" value={company.slug} />
+          <MetricLine label="Website" value={company.websiteUrl} />
           <MetricLine label="Industry" value={company.industry} />
           <MetricLine label="Size" value={company.sizeRange} />
           <MetricLine label="Country" value={company.country} />
-        </SectionBlock>
-
-        <SectionBlock title="Web presence" icon={Globe2}>
-          <MetricLine label="Website" value={company.websiteUrl} />
-          <MetricLine label="LinkedIn" value={company.linkedinUrl} />
-          <MetricLine label="Locale" value={company.locale} />
           <MetricLine label="Timezone" value={company.timezone} />
           <MetricLine label="Created" value={company.createdAt} />
         </SectionBlock>

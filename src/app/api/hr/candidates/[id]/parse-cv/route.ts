@@ -28,6 +28,24 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     const parsed = await parseCandidateDocument(String(document.id), companyId);
+    
+    // Automatisation : On lance l'analyse d'intégrité et de fit immédiatement après le parsing du CV
+    // Cela va déclencher le scraper LinkedIn automatiquement
+    let analysisResult = null;
+    try {
+      const { analyzeCandidateForMission } = await import("@/lib/hr/qualification");
+      analysisResult = await analyzeCandidateForMission({
+        companyId,
+        candidateId: id,
+        applicationId: pickString(document.mission_id),
+        scoredBy: authUserId,
+      });
+      console.log(`[Import] Automatic analysis triggered for candidate ${id}`);
+    } catch (analysisError) {
+      console.error("[Import] Automatic analysis failed:", analysisError);
+      // On n'échoue pas toute la requête si l'analyse auto échoue, mais on le loggue
+    }
+
     await logUsageEvent({
       companyId,
       userId: authUserId,
@@ -37,12 +55,14 @@ export async function POST(request: Request, context: RouteContext) {
       provider: "openai",
       metadata: {
         document_id: document.id,
+        automatic_analysis: !!analysisResult,
       },
     });
 
     return NextResponse.json({
       document: publicDocumentFields(parsed),
       parsedData: asObject(parsed).parsed_data ?? {},
+      analysis: analysisResult,
     });
   } catch (error) {
     const message = messageFromError(error, "Unable to parse CV");

@@ -1,7 +1,6 @@
 import { cache } from "react";
 import { getHrContext } from "@/lib/hr/auth";
-import { asObject, pickNumber, pickString } from "@/lib/hr/utils";
-import { formatDate, relativeTime } from "@/lib/hr/application-workspace";
+import { asObject, formatDate, pickNumber, pickString, relativeTime } from "@/lib/hr/utils";
 
 type Row = Record<string, unknown>;
 
@@ -102,6 +101,7 @@ function bestCandidateMission(candidateMissions: Row[]) {
   })[0] ?? null;
 }
 
+
 function missionTitle(candidateMission: Row | null) {
   const mission = asObject(candidateMission?.mission);
   return pickString(mission.title) ?? "-";
@@ -129,12 +129,12 @@ export const getCandidatesWorkspaceData = cache(async () => {
       .eq("company_id", companyId),
     supabase
       .from("candidate_documents")
-      .select("id, candidate_id, mission_id, document_type, status, file_name, mime_type, file_size_bytes, created_at, updated_at")
+      .select("id, candidate_id, mission_id, document_type, status, file_name, file_path, mime_type, file_size_bytes, created_at, updated_at")
       .eq("company_id", companyId)
       .order("created_at", { ascending: false }),
     supabase
       .from("linkedin_verifications")
-      .select("id, candidate_id, status, profile_name, headline, current_company, location, confidence_score, checked_at, created_at")
+      .select("id, candidate_id, status, profile_name, headline, current_company, location, confidence_score, profile_image_url, checked_at, created_at")
       .eq("company_id", companyId)
       .order("created_at", { ascending: false }),
     supabase
@@ -164,6 +164,17 @@ export const getCandidatesWorkspaceData = cache(async () => {
   const inconsistenciesByCandidate = byKey(rows(inconsistencyResponse.data), "candidate_id");
   const sessionsByCandidate = byKey(rows(sessionResponse.data), "candidate_id");
 
+  const allDocuments = rows(documentResponse.data);
+  const resumeDocuments = allDocuments.filter(doc => pickString(doc.document_type) === "resume");
+  const uniqueResumePaths = Array.from(new Set(resumeDocuments.map(doc => pickString(doc.file_path)).filter((p): p is string => Boolean(p))));
+  
+  const signedUrlsResponse = uniqueResumePaths.length > 0
+    ? await supabase.storage.from("candidate-cvs").createSignedUrls(uniqueResumePaths, 3600)
+    : { data: [], error: null };
+  
+  const cvUrlMap = new Map((signedUrlsResponse.data ?? []).map((item: { path: string; signedUrl: string }) => [item.path, item.signedUrl]));
+
+
   const candidates = rows(candidateResponse.data).map((candidate) => {
     const id = pickString(candidate.id) ?? "";
     const candidateMissions = candidateMissionsByCandidate.get(id) ?? [];
@@ -188,10 +199,17 @@ export const getCandidatesWorkspaceData = cache(async () => {
       ...sessions,
     ]);
 
+    const metadata = asObject(candidate.metadata);
+    const avatarUrl = pickString(latestVerification?.profile_image_url) ?? 
+                     pickString(metadata.profile_image_url) ?? 
+                     pickString(metadata.photo_url) ??
+                     null;
+
     return {
       id,
       candidate,
       name: fullName(candidate),
+      avatarUrl,
       subtitle: candidateSubtitle(candidate),
       email: pickString(candidate.email) ?? "-",
       location: pickString(candidate.location) ?? "-",
@@ -211,6 +229,7 @@ export const getCandidatesWorkspaceData = cache(async () => {
       openIssues: inconsistencies.filter((item) => pickString(item.status) === "open").length,
       lastActivity: relativeTime(lastActivity?.updated_at ?? lastActivity?.checked_at ?? lastActivity?.created_at),
       createdAt: formatDate(candidate.created_at),
+      cvUrl: cvUrlMap.get(pickString(latestDocument?.file_path) ?? "") ?? null,
     };
   });
 

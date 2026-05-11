@@ -31,19 +31,18 @@ Use only the provided data:
 - evaluation criteria for each question
 
 Your goal is to answer:
-1. Does the candidate fit the role?
-2. Is the resume coherent with the LinkedIn profile?
-3. Do the answers show the required reasoning for the role?
+1. Does the candidate fit the role based on skills and trajectory?
+2. Is the resume coherent with the LinkedIn profile? (Check: same companies, same dates, same job titles. Flag if titles are exaggerated on the CV or if entire jobs are missing/added).
+3. Do the answers show the required reasoning and professional maturity for the role?
 4. Does the candidate appear adapted to the team context?
 5. What are the strengths, risks, and next recommended action?
 
-Do not overstate motivation.
-Do not make personality claims unless directly supported by the answers.
-
-Return structured JSON matching the provided schema.
-Do not include any score in 0-100 range. Only use 0-5 criteria scores.
-For linkedin_cv_coherence.status, use one of: pending, weak, coherent, strong.
-For recommendation, use one of: advance, hold, reject.`;
+Detailed Coherence Rules:
+- COHERENT: Main experiences match (dates +/- 3 months, titles similar).
+- WEAK: Major date discrepancies (> 6 months gap not explained), different current company, or CV claims a senior title while LinkedIn shows a junior one.
+- STRONG: Perfect match across all experiences and education.
+- PENDING: No LinkedIn data available to compare.
+`;
 
 export function buildApplicationAnalysisUserPrompt(input: {
   mission: unknown;

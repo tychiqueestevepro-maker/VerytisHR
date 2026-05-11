@@ -18,10 +18,18 @@ export default async function CriteriaSettingsPage() {
           <>
             <span>Fit threshold {criteria.fitThreshold}</span>
             <span>Trust threshold {criteria.trustThreshold}</span>
-            <span>{criteria.recentMissions.length} recent mission profiles</span>
           </>
         }
       />
+
+      <div className="mb-10 max-w-2xl">
+        <p className="text-sm leading-relaxed text-foreground/50">
+          Les critères définissent les seuils de décision automatique et de confiance. 
+          Le <span className="font-bold text-foreground/70 text-pink-600">Fit Threshold</span> détermine si un candidat est recommandé, 
+          tandis que le <span className="font-bold text-foreground/70 text-pink-600">Trust Threshold</span> assure la cohérence des données (CV vs LinkedIn) 
+          avant de valider un score.
+        </p>
+      </div>
 
       <div className="mb-8 grid gap-8 xl:grid-cols-2">
         <SectionBlock title="Default scoring" icon={SlidersHorizontal}>

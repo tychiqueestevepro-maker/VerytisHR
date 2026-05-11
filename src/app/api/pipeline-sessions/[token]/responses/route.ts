@@ -52,6 +52,21 @@ export async function POST(request: Request, context: RouteContext) {
     const result = singleResponse
       ? await submitPipelineSessionAnswer(token, singleResponse)
       : await submitPipelineSessionResponses(token, responses);
+    
+    // Automatisation : On lance l'analyse si la session est terminée
+    if (result.completed) {
+      try {
+        const { analyzePipelineSession } = await import("@/lib/hr/pipeline");
+        // On lance l'analyse en arrière-plan pour ne pas bloquer le candidat
+        analyzePipelineSession(token).catch(err => {
+          console.error(`[Pipeline] Async analysis failed for token ${token}:`, err);
+        });
+        console.log(`[Pipeline] Automatic analysis triggered for session token ${token}`);
+      } catch (analysisError) {
+        console.error("[Pipeline] Failed to trigger automatic analysis:", analysisError);
+      }
+    }
+
     return NextResponse.json(result);
   } catch (error: unknown) {
     const message = errorMessage(error, "Unable to submit responses");

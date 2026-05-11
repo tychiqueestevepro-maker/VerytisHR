@@ -1,7 +1,6 @@
 import { cache } from "react";
 import { getHrContext } from "@/lib/hr/auth";
-import { asObject, pickNumber, pickString } from "@/lib/hr/utils";
-import { formatDate, relativeTime } from "@/lib/hr/application-workspace";
+import { asObject, formatDate, pickNumber, pickString, relativeTime } from "@/lib/hr/utils";
 
 type Row = Record<string, unknown>;
 
@@ -34,8 +33,10 @@ function usageLabel(eventType: unknown) {
   return (pickString(eventType) ?? "other").replaceAll("_", " ");
 }
 
+export const revalidate = 0;
+
 export const getSettingsWorkspaceData = cache(async () => {
-  const { supabase, companyId, role } = await getHrContext();
+  const { supabase, companyId, role, user: contextUser } = await getHrContext();
 
   const [
     companyResponse,
@@ -45,10 +46,11 @@ export const getSettingsWorkspaceData = cache(async () => {
     usageResponse,
     creditResponse,
     limitResponse,
+    linkedinAccountResponse,
   ] = await Promise.all([
     supabase
       .from("companies")
-      .select("*")
+      .select("*, metadata")
       .eq("id", companyId)
       .maybeSingle(),
     supabase
@@ -82,6 +84,11 @@ export const getSettingsWorkspaceData = cache(async () => {
       .select("*")
       .eq("company_id", companyId)
       .maybeSingle(),
+    supabase
+      .from("linkedin_accounts")
+      .select("id, email, status, updated_at")
+      .eq("company_id", companyId)
+      .order("updated_at", { ascending: false }),
   ]);
 
   for (const response of [
@@ -96,14 +103,19 @@ export const getSettingsWorkspaceData = cache(async () => {
     if (response.error) throw new Error(response.error.message || "Unable to load settings");
   }
 
+  const currentUser = contextUser;
+  const users = rows(userResponse.data);
+
   const company = asObject(companyResponse.data);
   const settings = asObject(company.settings);
-  const users = rows(userResponse.data);
+  const metadata = asObject(company.metadata);
+  
   const missions = rows(missionResponse.data);
   const candidates = rows(candidateResponse.data);
   const usageLogs = rows(usageResponse.data);
   const credits = rows(creditResponse.data);
   const limits = asObject(limitResponse.data);
+  const linkedinAccounts = linkedinAccountResponse.error ? [] : rows(linkedinAccountResponse.data);
   const activeMissions = missions.filter((mission) => pickString(mission.status) === "open").length;
   const archivedMissions = missions.filter((mission) => {
     const status = pickString(mission.status);
@@ -229,6 +241,28 @@ export const getSettingsWorkspaceData = cache(async () => {
       activeMissions,
       archivedMissions,
       candidates: candidates.length,
+    },
+    linkedin: {
+      accountName: pickString(asObject(company.metadata).linkedin_account_name),
+      accountImage: pickString(asObject(company.metadata).linkedin_account_image),
+      lastSyncedAt: pickString(asObject(company.metadata).linkedin_cookie_updated_at),
+      lastDetectedIp: pickString(linkedinAccounts[0]?.last_detected_ip),
+      lastDetectedCountry: pickString(linkedinAccounts[0]?.last_detected_country),
+      lastDetectedCity: pickString(linkedinAccounts[0]?.last_detected_city),
+      accounts: linkedinAccounts.map(acc => ({
+        id: pickString(acc.id),
+        email: pickString(acc.email),
+        status: pickString(acc.status),
+        updatedAt: relativeTime(acc.updated_at)
+      }))
+    },
+    user: {
+      id: pickString(currentUser?.id),
+      email: pickString(currentUser?.email),
+      firstName: pickString(currentUser?.first_name),
+      lastName: pickString(currentUser?.last_name),
+      avatarUrl: pickString(currentUser?.avatar_url),
+      name: [pickString(currentUser?.first_name), pickString(currentUser?.last_name)].filter(Boolean).join(" ") || pickString(currentUser?.email) || "Profile",
     },
   };
 });

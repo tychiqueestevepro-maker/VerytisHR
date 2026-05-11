@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { ApplicationCandidatesTable, type CandidateTableRow } from "@/components/hr/application-candidates-table";
 import { PageHeader, SourcingTabs } from "@/components/hr/application-components";
-import { SourcingHeaderActions } from "@/components/hr/sourcing-header-actions";
+import { ApplicationStatusToggle } from "@/components/hr/application-status-toggle";
 import { getApplicationWorkspaceData } from "@/lib/hr/application-workspace";
 
 export default async function SourcingCandidatesPage({ params }: { params: Promise<{ id: string }> }) {
@@ -30,7 +30,7 @@ export default async function SourcingCandidatesPage({ params }: { params: Promi
       <PageHeader
         eyebrow="Sourcing talent pool"
         title={String(data.application.title ?? "Mission")}
-        actions={<SourcingHeaderActions applicationId={id} />}
+        actions={<ApplicationStatusToggle applicationId={id} currentStatus={data.status} />}
         meta={
           <>
             <span>{data.progress.candidatesImported} profiles</span>

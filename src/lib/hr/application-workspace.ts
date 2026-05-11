@@ -1,7 +1,9 @@
 import { cache } from "react";
 import { getHrContext } from "@/lib/hr/auth";
-import { asObject, normalizeImportedCandidateName, pickString } from "@/lib/hr/utils";
+import { asObject, formatDate, normalizeImportedCandidateName, pickString, relativeTime } from "@/lib/hr/utils";
 import { getMissionWorkSamples } from "./work-samples";
+import { fetchLinkedInPublicPhoto } from "./linkedin-photo";
+import { storeCandidateProfileImage } from "./profile-images";
 
 export type ApplicationRow = Record<string, unknown>;
 export type CandidateRow = Record<string, unknown>;
@@ -56,35 +58,12 @@ function average(values: Array<number | null>) {
   return Math.round(valid.reduce((sum, value) => sum + value, 0) / valid.length);
 }
 
-export function formatDate(value: unknown) {
-  const date = pickString(value);
-  if (!date) return "-";
-  return new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(new Date(date));
-}
 
-export function relativeTime(value: unknown) {
-  const date = pickString(value);
-  if (!date) return "No activity";
-
-  const diff = Date.now() - new Date(date).getTime();
-  const minute = 60 * 1000;
-  const hour = 60 * minute;
-  const day = 24 * hour;
-
-  if (diff < minute) return "Just now";
-  if (diff < hour) return `${Math.max(1, Math.round(diff / minute))}m ago`;
-  if (diff < day) return `${Math.round(diff / hour)}h ago`;
-  if (diff < 2 * day) return "Yesterday";
-  if (diff < 7 * day) return `${Math.round(diff / day)}d ago`;
-
-  return formatDate(date);
-}
 
 function missionDisplayStatus(mission: ApplicationRow, candidateCount: number, analyzedCount: number) {
   const status = pickString(mission.status) ?? "draft";
   if (status === "draft") return "Draft";
   if (status === "closed" || status === "archived") return "Completed";
-  if (candidateCount > 0 && analyzedCount > 0 && analyzedCount < candidateCount) return "Analyzing";
   return "Active";
 }
 
@@ -452,7 +431,7 @@ export const getApplicationListData = cache(async () => {
   const [missionResponse, candidateMissionResponse, sessionResponse, usageResponse] = await Promise.all([
     supabase
       .from("missions")
-      .select("*")
+      .select("*, manager:users(first_name, last_name, email, avatar_url)")
       .eq("company_id", companyId)
       .order("updated_at", { ascending: false }),
     supabase
@@ -508,6 +487,11 @@ export const getApplicationListData = cache(async () => {
       lastActivityType: pickString(lastActivity?.event_type) ?? "application_update",
       workflowType: pickString(asObject(mission.metadata).workflow_type) ?? 
         (asObject(mission.metadata).import_list_name || asObject(mission.metadata).qualification_goal ? "sourcing" : "application"),
+      manager: [
+        pickString(asObject(mission.manager).first_name),
+        pickString(asObject(mission.manager).last_name)
+      ].filter(Boolean).join(" ") || pickString(asObject(mission.manager).email) || "-",
+      managerAvatar: pickString(asObject(mission.manager).avatar_url),
     };
   });
 
@@ -522,10 +506,10 @@ export const getMissionListData = cache(async () => {
 export const getApplicationWorkspaceData = cache(async (applicationId: string) => {
   const { supabase, companyId } = await getMissionHrContext();
 
-  const [missionResponse, candidateMissionResponse, pipelineResponse] = await Promise.all([
+  const [missionResponse, candidateMissionResponse, pipelineResponse, teamResponse] = await Promise.all([
     supabase
       .from("missions")
-      .select("*")
+      .select("*, manager:users(id, first_name, last_name, email, avatar_url)")
       .eq("company_id", companyId)
       .eq("id", applicationId)
       .maybeSingle(),
@@ -544,11 +528,18 @@ export const getApplicationWorkspaceData = cache(async (applicationId: string) =
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    supabase
+      .from("users")
+      .select("id, first_name, last_name, email, avatar_url")
+      .eq("company_id", companyId)
+      .eq("status", "active")
+      .order("first_name", { ascending: true }),
   ]);
 
   if (missionResponse.error) throw new Error(missionResponse.error.message || "Unable to load mission");
   if (candidateMissionResponse.error) throw new Error(candidateMissionResponse.error.message || "Unable to load candidates");
   if (pipelineResponse.error) throw new Error(pipelineResponse.error.message || "Unable to load pipeline");
+  if (teamResponse.error) throw new Error(teamResponse.error.message || "Unable to load team members");
   if (!missionResponse.data) return null;
 
   const allCandidateMissions = rows(candidateMissionResponse.data) as CandidateApplicationRow[];
@@ -610,9 +601,50 @@ export const getApplicationWorkspaceData = cache(async (applicationId: string) =
     if (response.error) throw new Error(response.error.message || "Unable to load mission workspace");
   }
 
-  const documentsByCandidate = byKey(rows(documentResponse.data), "candidate_id");
+  const documents = rows(documentResponse.data);
+  const documentsByCandidate = byKey(documents, "candidate_id");
+  const resumeDocuments = documents.filter(doc => pickString(doc.document_type) === "resume");
+  const uniqueResumePaths = Array.from(new Set(resumeDocuments.map(doc => pickString(doc.file_path)).filter((p): p is string => Boolean(p))));
+  
+  const signedUrlsResponse = uniqueResumePaths.length > 0
+    ? await supabase.storage.from("candidate-cvs").createSignedUrls(uniqueResumePaths, 3600)
+    : { data: [], error: null };
+  
+  const cvUrlMap = new Map((signedUrlsResponse.data ?? []).map((item: { path: string; signedUrl: string }) => [item.path, item.signedUrl]));
   const verificationsByCandidate = byKey(rows(verificationResponse.data), "candidate_id");
   const inconsistenciesByCandidate = byKey(rows(inconsistencyResponse.data), "candidate_id");
+
+  // Lazy photo retrieval for candidates with LinkedIn but no photo
+  const candidateRows = allCandidateMissions.map(cm => asObject(cm.candidate)).filter(c => pickString(c.id));
+  const candidatesNeedingPhotos = candidateRows.filter(c => {
+    const id = pickString(c.id);
+    const hasPhoto = profileImageUrl(c, latest(verificationsByCandidate.get(id ?? "") ?? []));
+    return !hasPhoto && pickString(c.linkedin_url);
+  }).slice(0, 5); // Limit to 5 per load to avoid slowing down too much
+
+  if (candidatesNeedingPhotos.length > 0) {
+    await Promise.all(candidatesNeedingPhotos.map(async (c) => {
+      const id = pickString(c.id);
+      const url = pickString(c.linkedin_url);
+      if (!id || !url) return;
+      
+      const photoUrl = await fetchLinkedInPublicPhoto(url);
+      if (photoUrl) {
+        const storedUrl = await storeCandidateProfileImage(supabase, {
+          companyId,
+          candidateId: id,
+          image: photoUrl
+        });
+        
+        if (storedUrl) {
+          await supabase.from("candidates").update({
+            metadata: { ...asObject(c.metadata), profile_image_url: storedUrl }
+          }).eq("id", id).eq("company_id", companyId);
+        }
+      }
+    }));
+  }
+
   const sessions = rows(sessionResponse.data);
   const sessionIds = sessions.map((session) => pickString(session.id)).filter((id): id is string => Boolean(id));
   const [responseResponse, eventResponse] = await Promise.all([
@@ -664,6 +696,7 @@ export const getApplicationWorkspaceData = cache(async (applicationId: string) =
     const candidateMissionMetadata = asObject(candidateMission.metadata);
     const cv = cvState(latestDocument);
     const linkedin = linkedinState(latestVerification, candidate);
+    const cvUrl = latestDocument ? cvUrlMap.get(pickString(latestDocument.file_path) ?? "") : null;
     const flow = sourceType(candidateMission);
     const rec = flow === "sourcing"
       ? sourcingRecommendation(fitScore, opportunityScore, candidateMission.recommendation)
@@ -703,6 +736,8 @@ export const getApplicationWorkspaceData = cache(async (applicationId: string) =
       linkedinCvCoherence: flow === "application" ? (pickString(candidateMissionMetadata.linkedin_cv_coherence) ?? (cv.label === "Parsed" && linkedin.label === "Verified" ? "Ready" : "Pending")) : null,
       inconsistencies: candidateInconsistencies,
       session: currentSession,
+      cvUrl: cvUrl ?? pickString(latestDocument?.url, latestDocument?.public_url),
+      linkedinUrl: pickString(candidate.linkedin_url),
       sessionStatus: pickString(currentSession?.status) ?? "not_created",
       sessionScore: roundScore(numberValue(sessionScore?.score)),
       why: [
@@ -838,6 +873,7 @@ export const getApplicationWorkspaceData = cache(async (applicationId: string) =
       candidate,
       candidateId,
       name: candidate?.name ?? pickString(session.candidate_name) ?? "Unnamed applicant",
+      profileImageUrl: candidate?.profileImageUrl ?? null,
       subtitle: candidate?.subtitle ?? pickString(session.candidate_email) ?? "-",
       status,
       responseStatus: complete ? "Completed" : status === "in_progress" ? "In progress" : status === "not_started" || status === "opened" ? "Not started" : status,
@@ -849,7 +885,9 @@ export const getApplicationWorkspaceData = cache(async (applicationId: string) =
       cvStatus: candidate?.cv.label ?? "Missing",
       linkedinStatus: candidate?.linkedin.label ?? "Missing",
       linkedinCvCoherence: candidate?.linkedinCvCoherence ?? pickString(criteria.linkedin_cv_coherence) ?? "Pending",
-      linkedinUrl: pickString(candidate?.candidate?.linkedin_url, session.candidate_linkedin_url),
+      linkedinUrl: candidate?.linkedinUrl ?? pickString(session.candidate_linkedin_url),
+      cvUrl: candidate?.cvUrl ?? null,
+      profileImageUrl: candidate?.profileImageUrl ?? null,
       completion,
       completionLabel: `${completedQuestions}/${totalQuestions || questions.length}`,
       integrityStatus: reviewNeeded ? "Review needed" : "Clean",
@@ -900,6 +938,13 @@ export const getApplicationWorkspaceData = cache(async (applicationId: string) =
         antiCheatLevel: pickString(rules.anti_cheat_level) ?? "low",
       };
     }),
+    manager: asObject(asObject(missionResponse.data).manager),
+    team: rows(teamResponse.data).map((user) => ({
+      id: pickString(user.id),
+      name: [pickString(user.first_name), pickString(user.last_name)].filter(Boolean).join(" ") || pickString(user.email) || "Member",
+      email: pickString(user.email),
+      avatarUrl: pickString(user.avatar_url),
+    })),
     sessions,
     applicationSessions,
     progress: {

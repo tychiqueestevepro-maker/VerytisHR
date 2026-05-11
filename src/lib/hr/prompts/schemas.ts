@@ -160,10 +160,12 @@ export const CvParsingJsonSchema = {
       },
     },
     seniority_level: { type: "string" as const },
+    linkedin_url: { anyOf: [{ type: "string" as const }, { type: "null" as const }] },
   },
   required: [
     "full_name", "current_title", "current_company", "location", "summary",
     "experiences", "companies", "job_titles", "skills", "education", "seniority_level",
+    "linkedin_url",
   ],
   additionalProperties: false,
 };

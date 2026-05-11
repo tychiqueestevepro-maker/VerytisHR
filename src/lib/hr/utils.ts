@@ -148,3 +148,27 @@ export function parseJsonObject(raw: string): JsonObject {
   const json = start >= 0 && end >= start ? candidate.slice(start, end + 1) : candidate;
   return asObject(JSON.parse(json));
 }
+
+export function formatDate(value: unknown) {
+  const date = pickString(value);
+  if (!date) return "-";
+  return new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(new Date(date));
+}
+
+export function relativeTime(value: unknown) {
+  const date = pickString(value);
+  if (!date) return "No activity";
+
+  const diff = Date.now() - new Date(date).getTime();
+  const minute = 60 * 1000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+
+  if (diff < minute) return "Just now";
+  if (diff < hour) return `${Math.max(1, Math.round(diff / minute))}m ago`;
+  if (diff < day) return `${Math.round(diff / hour)}h ago`;
+  if (diff < 2 * day) return "Yesterday";
+  if (diff < 7 * day) return `${Math.round(diff / day)}d ago`;
+
+  return formatDate(date);
+}

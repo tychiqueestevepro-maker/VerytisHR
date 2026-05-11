@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { ChevronDown, ChevronLeft, ChevronRight, LogOut, Users } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Link2, LogOut, Users } from "lucide-react";
 import { Link, usePathname } from "@/i18n/routing";
 import { useState, type ComponentProps, type ComponentType, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
@@ -30,6 +30,7 @@ type AppShellUser = {
   profile?: {
     first_name?: string | null;
     last_name?: string | null;
+    avatar_url?: string | null;
     role?: "owner" | "admin" | "recruiter" | "reviewer" | "member" | string | null;
   } | null;
 };
@@ -60,17 +61,24 @@ const NAV_STRUCTURE: NavItem[] = [
     subItems: []
   },
   {
+    key: "integrations",
+    labelKey: "integrations",
+    icon: Link2,
+    basePath: "/integrations",
+    subItems: []
+  },
+  {
     key: "settings",
     labelKey: "settings",
     icon: SettingsIcon,
     basePath: "/settings",
     subItems: [
+      { href: "/settings/profile", labelKey: "profile" },
       { href: "/settings/company", labelKey: "company_profile" },
       { href: "/settings/team", labelKey: "team" },
-      { href: "/settings/criteria", labelKey: "criteria" },
       { href: "/settings/billing", labelKey: "billing_credits" },
     ]
-  }
+  },
 ];
 
 export function AppShell({ 
@@ -125,7 +133,7 @@ export function AppShell({
   });
 
   return (
-    <div className="flex h-screen bg-background text-foreground overflow-hidden selection:bg-indigo-500/10">
+    <div className="flex h-screen bg-background text-foreground overflow-hidden selection:bg-pink-500/10">
       {/* Sidebar - Optimized for speed */}
       <motion.aside
         initial={false}
@@ -175,10 +183,10 @@ export function AppShell({
               href="/"
               className={cn(
                 "group flex h-9 items-center gap-2.5 rounded-[6px] px-2.5 text-[13px] text-foreground/50 transition duration-200 hover:bg-secondary hover:text-foreground",
-                pathname === "/" && "bg-secondary text-foreground font-medium"
+                pathname === "/" && "bg-pink-50 text-pink-600 font-bold"
               )}
             >
-              <DashboardIcon className="size-[18px] shrink-0" />
+              <DashboardIcon className={cn("size-[18px] shrink-0", pathname === "/" ? "text-pink-600" : "")} />
               {!collapsed && <span className="truncate">{tNav("home")}</span>}
             </Link>
 
@@ -194,11 +202,11 @@ export function AppShell({
                   <div
                     className={cn(
                       "group flex h-9 items-center justify-between rounded-[6px] px-2.5 text-[13px] text-foreground/50 transition duration-200 hover:bg-secondary hover:text-foreground",
-                      isActiveGroup && "bg-secondary text-foreground font-medium"
+                      isActiveGroup && "bg-pink-50 text-pink-600 font-bold"
                     )}
                   >
                     <Link href={item.basePath as AppHref} className="flex items-center gap-2.5 flex-1 h-full">
-                      <Icon className="size-[18px] shrink-0" />
+                      <Icon className={cn("size-[18px] shrink-0", isActiveGroup ? "text-pink-600" : "")} />
                       {!collapsed && <span className="truncate">{tNav(item.labelKey)}</span>}
                     </Link>
                     {!collapsed && hasSubItems && (
@@ -207,9 +215,9 @@ export function AppShell({
                           e.preventDefault();
                           toggleExpand(item.key);
                         }}
-                        className="p-1 hover:bg-secondary/80 rounded transition-colors"
+                        className="p-1 hover:bg-pink-100/50 rounded transition-colors"
                       >
-                        <ChevronDown className={cn("size-3.5 transition-transform duration-200", isExpanded ? "rotate-180" : "")} />
+                        <ChevronDown className={cn("size-3.5 transition-transform duration-200", isExpanded ? "rotate-180" : "", isActiveGroup ? "text-pink-600" : "")} />
                       </button>
                     )}
                   </div>
@@ -229,12 +237,12 @@ export function AppShell({
                             href={subItem.href as AppHref}
                             className={cn(
                               "flex h-8 items-center gap-2 px-2.5 text-[12px] text-foreground/40 transition hover:text-foreground",
-                              isActiveSub && "text-foreground font-medium bg-secondary/50 rounded"
+                              isActiveSub && "text-pink-600 font-bold bg-pink-50/50 rounded"
                             )}
                           >
                             <div className={cn(
                               "size-1.5 rounded-full",
-                              isActiveSub ? "bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.5)]" : "bg-foreground/20"
+                              isActiveSub ? "bg-pink-500 shadow-[0_0_8px_rgba(236,72,153,0.5)]" : "bg-foreground/20"
                             )} />
                             <span className="truncate">
                               {subItem.isDynamic ? subItem.labelKey : tNav(subItem.labelKey)}
@@ -259,14 +267,25 @@ export function AppShell({
             </Link>
             <div className="border-t border-border pt-4">
               <div className="flex items-center gap-3 px-2">
+                <div className={cn(
+                  "relative h-8 w-8 shrink-0 overflow-hidden rounded-full border border-white/40 bg-pink-500/10 shadow-sm transition-transform duration-300",
+                  collapsed && "h-7 w-7"
+                )}>
+                  {user.profile?.avatar_url ? (
+                    <img src={user.profile.avatar_url} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-[11px] font-black text-pink-600">
+                      {(user.profile?.first_name || "U").charAt(0)}
+                    </div>
+                  )}
+                </div>
                 {!collapsed ? (
                   <div className="flex min-w-0 flex-1 items-center justify-between">
                     <div className="min-w-0 flex flex-col">
-
-                      <p className="truncate text-[13px] font-medium text-foreground/90 leading-none mb-1">
-                        {user.profile?.first_name} {user.profile?.last_name}
+                      <p className="truncate text-[13px] font-bold text-foreground transition-colors group-hover:text-pink-600 leading-none mb-1.5">
+                        {[user.profile?.first_name, user.profile?.last_name].filter(Boolean).join(" ") || "User profile"}
                       </p>
-                      <p className="truncate text-[10px] uppercase tracking-wider text-foreground/30 font-semibold leading-none">
+                      <p className="truncate text-[10px] uppercase tracking-widest text-foreground/30 font-black leading-none">
                         {user.profile?.role === 'owner' ? tRoles('owner') : user.profile?.role === 'admin' ? tRoles('admin') : tRoles('member')}
                       </p>
                     </div>
@@ -282,7 +301,6 @@ export function AppShell({
                   </div>
                 ) : null}
               </div>
-
             </div>
           </div>
         </div>
@@ -290,8 +308,14 @@ export function AppShell({
 
       {/* Main Content - Flex-1 automatically fills space without animating padding */}
       <main className="flex-1 h-screen relative overflow-y-auto">
+        {/* Background Atmosphere - Simplified version of dashboard for consistency */}
+        <div className="fixed inset-0 bg-background -z-20 pointer-events-none" />
+        <div className="fixed inset-0 bg-[radial-gradient(circle_at_50%_0%,#fdf2f8,transparent_50%)] opacity-40 -z-10 pointer-events-none" />
+        <div className="fixed inset-0 bg-[radial-gradient(circle_at_100%_100%,#fdf4ff,transparent_50%)] opacity-30 -z-10 pointer-events-none" />
+        <div className="fixed inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.015] brightness-0 pointer-events-none -z-10" />
+
         <div className={cn(
-          "w-full h-full",
+          "w-full h-full relative z-10",
           pathname !== "/" && "px-4 md:px-8 py-6"
         )}>
           {children}

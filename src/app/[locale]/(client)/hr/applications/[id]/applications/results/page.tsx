@@ -1,6 +1,10 @@
 import { notFound } from "next/navigation";
-import { EmptyState, ApplicationTabs, PageHeader, ScoreBadge, StatusBadge } from "@/components/hr/application-components";
+import Link from "next/link";
+import { ArrowUpRight } from "lucide-react";
+import { EmptyState, ApplicationTabs, PageHeader, ScoreBadge, StatusBadge, DataTable, LinkedInLink, CVLink, Avatar } from "@/components/hr/application-components";
 import { getApplicationWorkspaceData } from "@/lib/hr/application-workspace";
+import { pickString } from "@/lib/hr/utils";
+import { ApplicationStatusToggle } from "@/components/hr/application-status-toggle";
 
 export default async function ApplicationsResultsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -14,8 +18,13 @@ export default async function ApplicationsResultsPage({ params }: { params: Prom
   return (
     <div className="mx-auto max-w-7xl">
       <PageHeader
-        eyebrow="Application results"
+        eyebrow="Recruitment Cockpit"
         title={`Who fits the real work for ${String(data.application.title ?? "Mission")}`}
+        actions={
+          <div className="flex items-center gap-3">
+             <ApplicationStatusToggle applicationId={id} currentStatus={data.status} />
+          </div>
+        }
         meta={
           <>
             <span>{results.length} applications reviewed</span>
@@ -26,59 +35,78 @@ export default async function ApplicationsResultsPage({ params }: { params: Prom
       <ApplicationTabs applicationId={id} active="results" />
 
       {results.length ? (
-        <div className="overflow-x-auto border-y border-border">
-          <table className="w-full min-w-[1320px] border-collapse text-sm">
-            <thead>
-              <tr className="border-b border-border bg-secondary/40 text-left text-[11px] uppercase tracking-[0.16em] text-foreground/40">
-                <th className="px-3 py-3 font-medium">Candidate</th>
-                <th className="px-3 py-3 font-medium">CV status</th>
-                <th className="px-3 py-3 font-medium">LinkedIn coherence</th>
-                <th className="px-3 py-3 text-right font-medium">Pipeline score</th>
-                <th className="px-3 py-3 text-right font-medium">Fit score</th>
-                <th className="px-3 py-3 text-right font-medium">Trust score</th>
-                <th className="px-3 py-3 text-right font-medium">Team fit</th>
-                <th className="px-3 py-3 font-medium">Completion</th>
-                <th className="px-3 py-3 font-medium">Integrity</th>
-                <th className="px-3 py-3 text-right font-medium">Paste</th>
-                <th className="px-3 py-3 text-right font-medium">Tabs</th>
-                <th className="px-3 py-3 font-medium">Strengths</th>
-                <th className="px-3 py-3 font-medium">Risks</th>
-                <th className="px-3 py-3 font-medium">Recommendation</th>
-                <th className="px-3 py-3 text-right font-medium">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/70">
-              {results.map((application) => (
-                <tr key={application.id} className="transition hover:bg-secondary/35">
-                  <td className="px-3 py-4">
-                    <div className="font-medium text-foreground">{application.name}</div>
-                    <div className="mt-1 text-xs text-foreground/45">{application.subtitle}</div>
-                  </td>
-                  <td className="px-3 py-4"><StatusBadge>{application.cvStatus}</StatusBadge></td>
-                  <td className="px-3 py-4"><StatusBadge>{application.linkedinCvCoherence}</StatusBadge></td>
-                  <td className="px-3 py-4 text-right"><ScoreBadge value={application.pipelineScore} /></td>
-                  <td className="px-3 py-4 text-right"><ScoreBadge value={application.fitScore} /></td>
-                  <td className="px-3 py-4 text-right"><ScoreBadge value={application.trustScore} /></td>
-                  <td className="px-3 py-4 text-right"><ScoreBadge value={application.teamFitScore} /></td>
-                  <td className="px-3 py-4"><StatusBadge>{application.completionLabel}</StatusBadge></td>
-                  <td className="px-3 py-4"><StatusBadge>{application.integrityStatus}</StatusBadge></td>
-                  <td className="px-3 py-4 text-right text-foreground/65">{application.pasteAttempts}</td>
-                  <td className="px-3 py-4 text-right text-foreground/65">{application.tabSwitches}</td>
-                  <td className="max-w-xs px-3 py-4 text-foreground/70">{application.strengths[0] ?? "-"}</td>
-                  <td className="max-w-xs px-3 py-4 text-foreground/55">{application.risks[0] ?? "-"}</td>
-                  <td className="px-3 py-4"><StatusBadge>{application.recommendation}</StatusBadge></td>
-                  <td className="px-3 py-4 text-right">
-                    <a
-                      href={`/hr/applications/${id}/applications/${application.id}`}
-                      className="inline-flex h-8 items-center rounded-md border border-border px-2.5 text-xs font-medium text-foreground/70 transition hover:bg-secondary hover:text-foreground"
-                    >
-                      Open
-                    </a>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="flex flex-col gap-3">
+          {results.map((application) => {
+            const detailUrl = `/hr/applications/${id}/applications/results/${application.id}`;
+            return (
+              <div
+                key={application.id}
+                className="group relative flex items-center gap-6 rounded-2xl border border-white/40 bg-white/40 p-4 pr-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] backdrop-blur-md transition-all duration-300 hover:border-pink-500/20 hover:shadow-[0_20px_40px_rgba(236,72,153,0.08)]"
+              >
+                {/* Background Link */}
+                <Link href={detailUrl} className="absolute inset-0 z-0 rounded-2xl" />
+
+                {/* Hover Gradient */}
+                <div className="absolute -inset-px rounded-2xl bg-gradient-to-r from-pink-500/5 via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100 pointer-events-none" />
+
+                <div className="relative flex flex-1 items-center gap-8 pointer-events-none">
+                  <div className="flex-1 min-w-0 ml-4">
+                    <div className="flex items-center gap-4">
+                      <Avatar src={application.profileImageUrl} name={application.name} size="md" />
+                      <div className="min-w-0 flex-1">
+                        <h3 className="text-base font-bold text-foreground group-hover:text-pink-600 transition-colors truncate">
+                          {application.name}
+                        </h3>
+                        <p className="text-[10px] text-foreground/40 font-bold uppercase tracking-wider truncate max-w-[500px]">
+                          {application.subtitle}
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-3 mt-1.5 text-[10px] text-foreground/30 font-bold uppercase tracking-widest truncate">
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <StatusBadge>{application.integrityStatus}</StatusBadge>
+                      </div>
+                      <span className="text-foreground/10 shrink-0">•</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="tabular-nums">Paste: {application.pasteAttempts}</span>
+                        <span className="opacity-30">/</span>
+                        <span className="tabular-nums">Tabs: {application.tabSwitches}</span>
+                      </div>
+                      <span className="text-foreground/10 shrink-0">•</span>
+                      <div className="max-w-[250px] truncate italic">
+                        {pickString(application.recommendation) || "No recommendation"}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="relative flex items-center gap-8 shrink-0 pr-4 z-10">
+                  <LinkedInLink url={application.linkedinUrl} />
+                  <CVLink url={application.cvUrl} />
+
+                  <div className="flex items-center gap-6 pl-6 border-l border-black/[0.03]">
+                    <div className="flex flex-col items-end justify-center min-w-[70px]">
+                      <span className="text-[9px] text-foreground/25 font-black uppercase tracking-[0.15em] mb-1">Pipeline</span>
+                      <ScoreBadge value={application.pipelineScore} />
+                    </div>
+                    <div className="flex flex-col items-end justify-center min-w-[70px]">
+                      <span className="text-[9px] text-foreground/25 font-black uppercase tracking-[0.15em] mb-1">Fit</span>
+                      <ScoreBadge value={application.fitScore} />
+                    </div>
+                    <div className="flex flex-col items-end justify-center min-w-[70px]">
+                      <span className="text-[9px] text-foreground/25 font-black uppercase tracking-[0.15em] mb-1">Team</span>
+                      <ScoreBadge value={application.teamFitScore} />
+                    </div>
+                  </div>
+
+                  <div className="absolute right-[-24px] top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-x-2 group-hover:translate-x-0 pointer-events-none">
+                    <ArrowUpRight className="size-5 text-pink-500" />
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       ) : (
         <EmptyState title="No application results yet" detail="Share a candidate link, receive responses and analyze them to rank inbound applications." />

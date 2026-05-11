@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { EmptyState, PageHeader, SourcingTabs } from "@/components/hr/application-components";
-import { SourcingHeaderActions } from "@/components/hr/sourcing-header-actions";
+import { ApplicationStatusToggle } from "@/components/hr/application-status-toggle";
 import { SourcingResultsTable } from "@/components/hr/sourcing-results-table";
 import { getApplicationWorkspaceData } from "@/lib/hr/application-workspace";
 
@@ -18,7 +18,7 @@ export default async function SourcingResultsPage({ params }: { params: Promise<
       <PageHeader
         eyebrow="Sourcing results"
         title={`Who to contact first for ${String(data.application.title ?? "Mission")}`}
-        actions={<SourcingHeaderActions applicationId={id} />}
+        actions={<ApplicationStatusToggle applicationId={id} currentStatus={data.status} />}
         meta={
           <>
             <span>{data.summary.analyzedCount} profiles analyzed</span>

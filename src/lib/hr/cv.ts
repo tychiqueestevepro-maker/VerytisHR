@@ -65,20 +65,47 @@ export async function extractTextFromBuffer(input: {
   const filename = input.filename?.toLowerCase() || "";
 
   if (mimeType.includes("pdf") || filename.endsWith(".pdf")) {
-    // Keep pdf-parse out of Next's server bundle so pdf.js resolves its worker from node_modules.
-    const { PDFParse } = nodeRequire("pdf-parse") as typeof import("pdf-parse");
-    if (!pdfWorkerConfigured) {
-      const workerPath = join(dirname(nodeRequire.resolve("pdf-parse")), "pdf.worker.mjs");
-      PDFParse.setWorker(pathToFileURL(workerPath).toString());
-      pdfWorkerConfigured = true;
-    }
-
-    const parser = new PDFParse({ data: input.buffer });
+    console.log(`[CV] Attempting to parse PDF with pdfjs-dist 5.x (Absolute Path): ${filename}`);
     try {
-      const result = await parser.getText();
-      return result.text.trim();
-    } finally {
-      await parser.destroy();
+      // On utilise les versions legacy pour Node.js
+      const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+      
+      // On récupère le chemin absolu physique du worker
+      const workerPath = nodeRequire.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs");
+      pdfjs.GlobalWorkerOptions.workerSrc = workerPath;
+      
+      const loadingTask = pdfjs.getDocument({
+        data: new Uint8Array(input.buffer),
+        disableWorker: true,
+        verbosity: 0
+      } as any);
+
+      const pdf = await loadingTask.promise;
+      let fullText = "";
+      
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        
+        let lastY = -1;
+        let pageText = "";
+        
+        for (const item of content.items as any[]) {
+          if (lastY !== -1 && Math.abs(lastY - item.transform[5]) > 2) {
+            pageText += "\n";
+          }
+          pageText += item.str + (item.hasEOL ? "" : " ");
+          lastY = item.transform[5];
+        }
+        
+        fullText += pageText + "\n\n";
+      }
+
+      console.log(`[CV] Successfully parsed PDF, extracted ${fullText.length} chars`);
+      return fullText.trim();
+    } catch (error: any) {
+      console.error("[CV] PDF parsing error detail:", error);
+      throw new Error(`Erreur technique PDF Engine: ${error?.message || "Échec moteur PDF"}`);
     }
   }
 
@@ -213,6 +240,25 @@ export async function parseCandidateDocument(documentId: string, companyId: stri
       .single();
 
     if (updateError) throw new Error(updateError.message || "Unable to save parsed CV");
+
+    // Mise à jour de l'URL LinkedIn du candidat si trouvée dans le CV
+    const linkedinUrl = pickString((parsedData as any).linkedin_url);
+    if (linkedinUrl) {
+      const { data: candidate } = await supabase
+        .from("candidates")
+        .select("linkedin_url")
+        .eq("id", typedDocument.candidate_id)
+        .maybeSingle();
+      
+      if (candidate && !candidate.linkedin_url) {
+        await supabase
+          .from("candidates")
+          .update({ linkedin_url: linkedinUrl })
+          .eq("id", typedDocument.candidate_id);
+        console.log(`[CV] Updated candidate ${typedDocument.candidate_id} with LinkedIn URL: ${linkedinUrl}`);
+      }
+    }
+
     return updated;
   } catch (parseError) {
     await supabase

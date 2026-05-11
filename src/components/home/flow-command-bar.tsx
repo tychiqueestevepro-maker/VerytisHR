@@ -20,7 +20,7 @@ interface Flow {
   contexts: FlowContext[];
 }
 
-export function FlowCommandBar({ initialFlows, onSend }: { initialFlows: Flow[]; onSend?: (text: string) => void }) {
+export function FlowCommandBar({ initialFlows, onSend }: { initialFlows: Flow[]; onSend?: (text: string, flowId: string, contextId: string | null) => void }) {
   const flows = initialFlows || [];
   const t = useTranslations("FlowCommandBar");
   
@@ -41,7 +41,7 @@ export function FlowCommandBar({ initialFlows, onSend }: { initialFlows: Flow[];
 
   const handleSubmit = () => {
     if (!inputValue.trim()) return;
-    onSend?.(inputValue);
+    onSend?.(inputValue, currentFlow.id, selectedContext?.id || null);
     setInputValue("");
   };
 

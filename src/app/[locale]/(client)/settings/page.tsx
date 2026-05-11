@@ -6,27 +6,27 @@ import { LocaleSwitcher } from "@/components/layout/locale-switcher";
 
 const sections = [
   {
+    href: "/settings/profile",
+    title: "Profil",
+    detail: "Nom, email et photo de profil.",
+    icon: KeyRound,
+  },
+  {
     href: "/settings/company",
-    title: "Company profile",
-    detail: "Identity and billing contact.",
+    title: "Entreprise",
+    detail: "Identité et contact de facturation.",
     icon: Building2,
   },
   {
     href: "/settings/team",
-    title: "Team",
-    detail: "Members, roles and access status.",
+    title: "Équipe",
+    detail: "Membres, rôles et accès.",
     icon: Users,
   },
   {
-    href: "/settings/criteria",
-    title: "Criteria",
-    detail: "Global thresholds and mission evaluation signals.",
-    icon: SlidersHorizontal,
-  },
-  {
     href: "/settings/billing",
-    title: "Billing & credits",
-    detail: "Plan, credits, limits and recent usage.",
+    title: "Facturation",
+    detail: "Plan, crédits, limites et usage.",
     icon: CreditCard,
   },
 ];
@@ -50,18 +50,31 @@ export default async function SettingsPage() {
         actions={<LocaleSwitcher />}
       />
 
-      <div className="mb-8 grid gap-4 md:grid-cols-3">
-        <SectionBlock title="Company">
-          <p className="text-lg font-semibold text-foreground">{data.company.name}</p>
-          <p className="mt-2 text-sm text-foreground/45">{data.company.industry}</p>
+      <div className="mb-8 grid gap-4 md:grid-cols-4">
+        <SectionBlock title="Profil">
+          <div className="flex items-center gap-4">
+            <div className="relative h-12 w-12 overflow-hidden rounded-full border border-white/40 bg-pink-500/10 shadow-sm">
+              {data.user.avatarUrl ? (
+                <img src={data.user.avatarUrl} alt="" className="h-full w-full object-cover" />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-lg font-black text-pink-600">
+                  {data.user.name.charAt(0)}
+                </div>
+              )}
+            </div>
+            <div>
+              <p className="font-bold text-foreground truncate max-w-[140px]">{data.user.name}</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-pink-600 opacity-60">{data.role}</p>
+            </div>
+          </div>
         </SectionBlock>
-        <SectionBlock title="Credits">
-          <p className="text-2xl font-semibold text-foreground">{data.company.creditsBalance}</p>
-          <p className="mt-2 text-sm text-foreground/45">Available balance</p>
+        <SectionBlock title="Entreprise">
+          <p className="text-lg font-semibold text-foreground truncate">{data.company.name}</p>
+          <p className="mt-1 text-[11px] font-bold uppercase tracking-wider text-foreground/30">{data.company.industry}</p>
         </SectionBlock>
-        <SectionBlock title="Criteria">
-          <p className="text-2xl font-semibold text-foreground">{data.criteria.fitThreshold}</p>
-          <p className="mt-2 text-sm text-foreground/45">Default fit threshold</p>
+        <SectionBlock title="Facturation">
+          <p className="text-2xl font-black text-foreground">{data.company.creditsBalance}</p>
+          <p className="mt-1 text-[11px] font-bold uppercase tracking-wider text-foreground/30">Solde disponible</p>
         </SectionBlock>
       </div>
 

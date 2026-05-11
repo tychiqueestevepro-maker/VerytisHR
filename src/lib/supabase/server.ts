@@ -1,8 +1,31 @@
 import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 
 export async function createSupabaseServerClient() {
   const cookieStore = await cookies();
+  const headerList = await headers();
+  const authHeader = headerList.get("Authorization");
+
+  // Si on a un header Bearer, on l'utilise pour l'auth (cas de l'extension)
+  if (authHeader?.startsWith("Bearer ")) {
+    const token = authHeader.split(" ")[1];
+    console.log("[Supabase] Using Bearer token for authentication");
+    return createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        global: {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+        cookies: {
+          getAll() { return []; },
+          setAll() {},
+        },
+      }
+    );
+  }
 
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

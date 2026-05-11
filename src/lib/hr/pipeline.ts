@@ -16,7 +16,7 @@ import { computeApplicationFitScore, computeApplicationTeamFitScore, computeAppl
 import { computeAnalysisHash, findCachedAnalysis, storeCachedAnalysis } from "./analysis-cache";
 import { asObject, pickNumber, pickString, truncateText } from "./utils";
 import { getMissionWorkSamples, workSamplePromptItems } from "./work-samples";
-import { scrapeLinkedInProfile, formatScrapedDataForVerification } from "./scraper/linkedin";
+import { scrapeLinkedInProfile, parseLinkedInProfile, formatScrapedDataForVerification } from "./scraper/linkedin";
 
 const QUESTION_TYPES = new Set([
   "short_text",
@@ -261,7 +261,7 @@ async function generatePipelineSpec(companyId: string, mission: Record<string, u
       estimatedTimeMinutes: pickNumber(missionMeta.estimated_time_minutes),
       questionTypes: Array.isArray(questionTypes) ? questionTypes : undefined,
       workSamples,
-    }),
+    } as any),
     schema: PipelineGenerationJsonSchema,
     schemaName: PIPELINE_GENERATION_SCHEMA_NAME,
   });
@@ -435,12 +435,12 @@ export async function getMissionPipeline(companyId: string, applicationId: strin
   };
 }
 
-async function loadSessionForAnalysis(token: string) {
+async function loadSessionForAnalysis(sessionIdOrToken: string) {
   const supabase = createSupabaseServiceClient();
   const { data: session, error } = await supabase
     .from("pipeline_sessions")
     .select("*")
-    .eq("public_token", token)
+    .or(`id.eq.${sessionIdOrToken},public_token.eq.${sessionIdOrToken}`)
     .maybeSingle();
 
   if (error) throw new Error(error.message || "Unable to load pipeline session");
@@ -448,9 +448,9 @@ async function loadSessionForAnalysis(token: string) {
   return asObject(session);
 }
 
-export async function analyzePipelineSession(token: string) {
+export async function analyzePipelineSession(sessionIdOrToken: string) {
   const supabase = createSupabaseServiceClient();
-  const session = await loadSessionForAnalysis(token);
+  const session = await loadSessionForAnalysis(sessionIdOrToken);
 
   if (session.status === "expired" || session.status === "cancelled") {
     throw new Error("Session is no longer active");
@@ -531,39 +531,106 @@ export async function analyzePipelineSession(token: string) {
       new Date().getTime() - new Date(pickString(linkedin.created_at) || 0).getTime() > CACHE_EXPIRATION_DAYS * 24 * 60 * 60 * 1000
     );
 
-    if ((!linkedin || isExpired) && session.candidate_linkedin_url) {
-      if (isExpired) {
-        console.log(`[Analysis] LinkedIn data for ${session.candidate_linkedin_url} is older than ${CACHE_EXPIRATION_DAYS} days. Rescraping...`);
-      } else {
-        console.log(`[Analysis] LinkedIn verification missing for ${session.candidate_linkedin_url}. Attempting automated scrape...`);
+    const effectiveLinkedinUrl = pickString(session.candidate_linkedin_url) || pickString(candidate?.linkedin_url);
+    
+    // 1. On récupère le compte LinkedIn configuré pour cette entreprise
+    const { data: linkedinAccount } = await supabase
+      .from("linkedin_accounts")
+      .select("*")
+      .eq("company_id", companyId)
+      .eq("status", "connected")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const { data: linkedinSession } = linkedinAccount 
+      ? await supabase
+          .from("linkedin_sessions")
+          .select("*")
+          .eq("account_id", linkedinAccount.id)
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      : { data: null };
+
+    // Legacy fallback (to be removed in Phase 3 migration)
+    const { data: companyRecord } = await supabase.from("companies").select("metadata").eq("id", companyId).maybeSingle();
+    const companyMetadata = asObject(companyRecord?.metadata);
+    const cachedHtml = pickString(companyMetadata.last_scraped_html);
+    const legacyCookie = pickString(companyMetadata.linkedin_session_cookie);
+
+    let scrapedProfile = null;
+
+    if ((!linkedin || isExpired) && effectiveLinkedinUrl) {
+      console.log(`[Analysis] Checking for cached HTML for URL: ${effectiveLinkedinUrl}`);
+      
+      const extractLinkedinUsername = (url: string) => {
+        const match = url.match(/linkedin\.com\/in\/([^/?#]+)/);
+        return match ? match[1] : null;
+      };
+
+      if (cachedHtml && effectiveLinkedinUrl.includes(extractLinkedinUsername(effectiveLinkedinUrl) || "")) {
+        console.log(`[Analysis] Using direct HTML from extension! Skipping Puppeteer.`);
+        scrapedProfile = await parseLinkedInProfile(cachedHtml);
+      } else if (linkedinSession || legacyCookie) {
+        console.log(`[Analysis] Session found: ${!!linkedinSession || !!legacyCookie}`);
+        console.log(`[Analysis] Triggering scraper for URL: ${effectiveLinkedinUrl}`);
+        
+        try {
+          scrapedProfile = await scrapeLinkedInProfile(
+            effectiveLinkedinUrl, 
+            linkedinSession?.session_data || legacyCookie,
+            linkedinAccount?.proxy_config
+          );
+        } catch (scraperError: any) {
+          console.error(`[Analysis] Scraper CRASHED: ${scraperError.message}`);
+          await supabase.from("linkedin_verifications").upsert({
+            company_id: companyId,
+            candidate_id: candidateId,
+            linkedin_url: effectiveLinkedinUrl,
+            status: "error",
+            verification_data: { error: `Scraper crashed: ${scraperError.message}` }
+          }, { onConflict: "candidate_id" });
+        }
       }
       
-      const companyMetadata = asObject(mission?.metadata);
-      const linkedInCookie = pickString(companyMetadata.linkedin_session_cookie);
-      
-      const scrapedProfile = await scrapeLinkedInProfile(pickString(session.candidate_linkedin_url) ?? "", linkedInCookie);
-      if (scrapedProfile) {
-        const verificationData = formatScrapedDataForVerification(scrapedProfile);
-        
-        // Update existing or insert new verification
-        const { data: newLinkedin } = await supabase
+      if (!scrapedProfile) {
+        console.warn(`[Analysis] LinkedIn scraper returned NULL for ${effectiveLinkedinUrl}`);
+        await supabase
           .from("linkedin_verifications")
           .upsert({
             company_id: companyId,
             candidate_id: candidateId,
-            linkedin_url: session.candidate_linkedin_url,
+            linkedin_url: effectiveLinkedinUrl,
+            status: "error",
+            verification_data: { error: "Automated scrape returned no data" }
+          }, { onConflict: "candidate_id" });
+      } else {
+        console.log(`[Analysis] Scraper success for ${effectiveLinkedinUrl}. Updating DB...`);
+        const verificationData = formatScrapedDataForVerification(scrapedProfile);
+        
+        const { data: newLinkedin, error: upsertError } = await supabase
+          .from("linkedin_verifications")
+          .upsert({
+            company_id: companyId,
+            candidate_id: candidateId,
+            linkedin_url: effectiveLinkedinUrl,
             ...verificationData,
-            created_at: new Date().toISOString(), // Ensure timestamp is updated
-          }, { onConflict: "company_id,candidate_id,linkedin_url" })
+            status: "verified",
+            checked_at: new Date().toISOString()
+          }, { onConflict: "candidate_id" })
           .select("*")
           .maybeSingle();
         
+        if (upsertError) console.error(`[Analysis] Upsert error (success scrape): ${upsertError.message}`);
         if (newLinkedin) {
           linkedin = newLinkedin;
-          console.log("[Analysis] Automated LinkedIn scrape successful and cache updated.");
+          console.log("[Analysis] LinkedIn cache updated successfully.");
         }
       }
     }
+
+    console.log(`[Analysis] Preparing AI analysis. LinkedIn data present: ${!!linkedin}`);
 
     const model = HR_CORE_MODEL;
     const truncatedResponses = truncateText(JSON.stringify(responses, null, 2), 16000);

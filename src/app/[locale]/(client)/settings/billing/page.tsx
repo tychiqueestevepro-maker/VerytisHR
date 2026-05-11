@@ -60,40 +60,34 @@ export default async function BillingSettingsPage() {
         </SectionBlock>
       </div>
 
-      <div className="grid gap-8 xl:grid-cols-2">
-        <SectionBlock title="Recent usage" icon={ReceiptText}>
-          {usage.recent.length ? (
-            <div className="divide-y divide-border/70 border-y border-border">
-              {usage.recent.map((item) => (
-                <div key={item.id} className="grid gap-3 py-4 text-sm md:grid-cols-[1fr_auto]">
-                  <div>
-                    <p className="font-medium capitalize text-foreground">{item.event}</p>
-                    <p className="mt-1 text-xs text-foreground/45">{item.provider} - {item.model} - {item.createdAt}</p>
-                  </div>
-                  <span className="font-medium text-foreground">{item.credits}</span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <EmptyState title="No usage yet" detail="Credit usage will appear after AI scoring, parsing or verification events." />
-          )}
-        </SectionBlock>
-
-        <SectionBlock title="Credit ledger">
+      <div className="grid gap-8 xl:grid-cols-1">
+        <SectionBlock title="Credit ledger" icon={ReceiptText}>
           {usage.credits.length ? (
-            <div className="divide-y divide-border/70 border-y border-border">
-              {usage.credits.map((credit) => (
-                <div key={credit.id} className="grid gap-3 py-4 text-sm md:grid-cols-[1fr_auto]">
-                  <div>
-                    <p className="font-medium capitalize text-foreground">{credit.type}</p>
-                    <p className="mt-1 text-xs text-foreground/45">{credit.description} - {credit.createdAt}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-medium text-foreground">{credit.amount > 0 ? "+" : ""}{credit.amount}</p>
-                    <p className="mt-1 text-xs text-foreground/45">Balance {credit.balanceAfter}</p>
-                  </div>
-                </div>
-              ))}
+            <div className="overflow-x-auto rounded-2xl border border-white/40 bg-white/20 backdrop-blur-md shadow-sm">
+              <table className="w-full min-w-[800px] border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-black/[0.03] text-left text-[10px] font-bold uppercase tracking-[0.2em] text-foreground/30 bg-black/[0.01]">
+                    <th className="px-6 py-4 font-bold">Transaction</th>
+                    <th className="px-6 py-4 font-bold">Description</th>
+                    <th className="px-6 py-4 font-bold text-right">Amount</th>
+                    <th className="px-6 py-4 font-bold text-right">Balance</th>
+                    <th className="px-6 py-4 font-bold text-right">Date</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-black/[0.03]">
+                  {usage.credits.map((credit) => (
+                    <tr key={credit.id} className="transition hover:bg-black/[0.02]">
+                      <td className="px-6 py-4 font-bold text-foreground capitalize">{credit.type}</td>
+                      <td className="px-6 py-4 text-foreground/50 font-medium">{credit.description}</td>
+                      <td className={cn("px-6 py-4 text-right font-bold", credit.amount > 0 ? "text-emerald-600" : "text-foreground")}>
+                        {credit.amount > 0 ? "+" : ""}{credit.amount}
+                      </td>
+                      <td className="px-6 py-4 text-right text-foreground/60 font-bold">{credit.balanceAfter}</td>
+                      <td className="px-6 py-4 text-right text-foreground/40 font-medium">{credit.createdAt}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           ) : (
             <EmptyState title="No credit transactions" detail="Credit purchases, grants and adjustments will be listed here." />

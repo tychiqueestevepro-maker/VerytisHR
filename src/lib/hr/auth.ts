@@ -8,6 +8,9 @@ type HrUserRow = {
   email: string;
   role: HrRole;
   status: string;
+  first_name: string | null;
+  last_name: string | null;
+  avatar_url: string | null;
 };
 
 export type HrContext = {
@@ -49,7 +52,7 @@ export async function getHrContext(options: { recruiter?: boolean; admin?: boole
   const supabase = createSupabaseServiceClient();
   const { data: hrUser, error: userError } = await supabase
     .from("users")
-    .select("id, company_id, email, role, status")
+    .select("id, company_id, email, role, status, first_name, last_name, avatar_url")
     .eq("id", user.id)
     .maybeSingle();
 
@@ -84,6 +87,8 @@ export function statusFromError(error: unknown) {
   return 500;
 }
 
-export function messageFromError(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback;
+export function messageFromError(error: unknown, fallback: string = "An unexpected error occurred") {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object" && "message" in error) return String(error.message);
+  return fallback;
 }

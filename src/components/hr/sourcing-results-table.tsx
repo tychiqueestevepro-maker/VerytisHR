@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { BriefcaseBusiness, Building2, ExternalLink, Globe, Lightbulb, MapPin, Target, TimerReset, X } from "lucide-react";
-import { ScoreBadge, StatusBadge } from "@/components/hr/application-components";
+import { ArrowUpRight, BriefcaseBusiness, Building2, ExternalLink, Globe, Lightbulb, MapPin, Target, TimerReset, X } from "lucide-react";
+import { ScoreBadge, StatusBadge, Avatar, LinkedInLink, CVLink } from "@/components/hr/application-components";
+import { pickString } from "@/lib/hr/utils";
 import { cn } from "@/lib/utils";
 
 type RowObject = Record<string, unknown>;
@@ -32,13 +33,6 @@ export type SourcingAnalysisCandidate = {
 
 function asObject(value: unknown): RowObject {
   return value && typeof value === "object" && !Array.isArray(value) ? value as RowObject : {};
-}
-
-function pickString(...values: unknown[]) {
-  for (const value of values) {
-    if (typeof value === "string" && value.trim()) return value.trim();
-  }
-  return null;
 }
 
 function normalizedRecommendation(value: unknown) {
@@ -230,17 +224,10 @@ function AnalysisDrawer({
             <ScoreBadge value={candidate.fitScore} />
             <span className="text-xs text-foreground/40">Opportunity</span>
             <ScoreBadge value={candidate.opportunityScore} />
-            {linkedinUrl ? (
-              <a
-                href={linkedinUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-foreground/65 transition hover:bg-secondary hover:text-foreground"
-              >
-                LinkedIn
-                <ExternalLink className="size-3.5" />
-              </a>
-            ) : null}
+            <div className="ml-auto flex items-center gap-6">
+              <LinkedInLink url={linkedinUrl} />
+              <CVLink url={null} /> {/* Sourcing candidates don't usually have CVs here yet, but keeping the slot for consistency if needed */}
+            </div>
           </div>
         </header>
 
@@ -492,53 +479,86 @@ export function SourcingResultsTable({
 
   return (
     <>
-      <div className="overflow-x-auto border-y border-border">
-        <table className="w-full min-w-[1100px] border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-border bg-secondary/40 text-left text-[11px] uppercase tracking-[0.16em] text-foreground/40">
-              <th className="px-3 py-3 font-medium">Rank</th>
-              <th className="px-3 py-3 font-medium">Candidate</th>
-              <th className="px-3 py-3 font-medium">Current company</th>
-              <th className="px-3 py-3 font-medium">Current role</th>
-              <th className="px-3 py-3 text-right font-medium">Fit score</th>
-              <th className="px-3 py-3 text-right font-medium">Opportunity</th>
-              <th className="px-3 py-3 font-medium">Reason</th>
-              <th className="px-3 py-3 font-medium">Suggested angle</th>
-              <th className="px-3 py-3 font-medium">Risks</th>
-              <th className="px-3 py-3 text-right font-medium">Action</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border/70">
-            {candidates.map((candidate, index) => (
-              <tr key={candidate.id} className="transition hover:bg-secondary/35">
-                <td className="px-3 py-4 font-semibold">#{index + 1}</td>
-                <td className="px-3 py-4">
-                  <div className="font-medium text-foreground">{candidate.name}</div>
-                  <div className="mt-1 text-xs text-foreground/45">{candidate.subtitle}</div>
-                </td>
-                <td className="px-3 py-4 text-foreground/65">{candidate.currentCompany}</td>
-                <td className="px-3 py-4 text-foreground/65">{candidate.currentRole}</td>
-                <td className="px-3 py-4 text-right"><ScoreBadge value={candidate.fitScore} /></td>
-                <td className="px-3 py-4 text-right"><ScoreBadge value={candidate.opportunityScore} /></td>
-                <td className="max-w-xs px-3 py-4 text-foreground/70">{candidate.whyThisProfile}</td>
-                <td className="max-w-xs px-3 py-4 text-foreground/55">{candidate.suggestedAngle}</td>
-                <td className="max-w-xs px-3 py-4 text-foreground/55">{candidate.sourcingRisks[0] ?? "-"}</td>
-                <td className="px-3 py-4 text-right">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedCandidateId(candidate.id)}
-                    className={cn(
-                      "inline-flex h-8 items-center gap-1 rounded-md border border-border px-2.5 text-xs font-medium text-foreground/70 transition",
-                      "hover:bg-secondary hover:text-foreground",
+      <div className="flex flex-col gap-3">
+        {candidates.map((candidate, index) => {
+          const isRejected = isRejectedRecommendation(candidate.recommendation);
+          
+          return (
+            <div
+              key={candidate.id}
+              className="group relative flex items-center gap-6 rounded-2xl border border-white/40 bg-white/40 p-4 pr-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] backdrop-blur-md transition-all duration-300 hover:border-pink-500/20 hover:shadow-[0_20px_40px_rgba(236,72,153,0.08)] cursor-pointer"
+              onClick={() => setSelectedCandidateId(candidate.id)}
+            >
+              {/* Hover Gradient */}
+              <div className="absolute -inset-px rounded-2xl bg-gradient-to-r from-pink-500/5 via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100 pointer-events-none" />
+
+              <div className="relative flex flex-1 items-center gap-8">
+                {/* Rank Indicator */}
+                <div className="flex w-10 items-center justify-center font-black text-foreground/10 group-hover:text-pink-500/20 transition-colors">
+                  #{index + 1}
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-4">
+                    <Avatar src={candidate.profileImageUrl} name={candidate.name} size="md" />
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-base font-bold text-foreground group-hover:text-pink-600 transition-colors truncate">
+                        {candidate.name}
+                      </h3>
+                      <p className="text-[10px] text-foreground/40 font-bold uppercase tracking-wider truncate max-w-[350px]">
+                        {candidate.subtitle}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-3 mt-1.5 text-[10px] text-foreground/30 font-bold uppercase tracking-widest">
+                    {(candidate.fitScore !== null || candidate.opportunityScore !== null) && (
+                      <>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <StatusBadge>{candidate.recommendation || "Pending"}</StatusBadge>
+                        </div>
+                        <span className="text-foreground/10 shrink-0">•</span>
+                      </>
                     )}
-                  >
-                    Open
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <BriefcaseBusiness className="size-3 text-foreground/20 shrink-0" />
+                      <span className="truncate max-w-[300px]">{candidate.currentRole} at {candidate.currentCompany}</span>
+                    </div>
+                    {(candidate.whyThisProfile || candidate.fitScore !== null) && (
+                      <>
+                        <span className="text-foreground/10 shrink-0">•</span>
+                        <div className="max-w-[400px] truncate italic text-foreground/45 font-medium">
+                          {candidate.whyThisProfile || "Analysis completed"}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="relative flex items-center gap-8 shrink-0 pr-4 z-10">
+                <div className="flex items-center gap-4" onClick={(e) => e.stopPropagation()}>
+                   <LinkedInLink url={linkedinHref(candidate)} />
+                </div>
+
+                <div className="flex items-center gap-6 pl-6 border-l border-black/[0.03]">
+                  <div className="flex flex-col items-end justify-center min-w-[70px]">
+                    <span className="text-[9px] text-foreground/25 font-black uppercase tracking-[0.15em] mb-1">Fit Score</span>
+                    <ScoreBadge value={candidate.fitScore} />
+                  </div>
+                  <div className="flex flex-col items-end justify-center min-w-[70px]">
+                    <span className="text-[9px] text-foreground/25 font-black uppercase tracking-[0.15em] mb-1">Opportunity</span>
+                    <ScoreBadge value={candidate.opportunityScore} />
+                  </div>
+                </div>
+
+                <div className="absolute right-[-24px] top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-x-2 group-hover:translate-x-0">
+                  <ArrowUpRight className="size-5 text-pink-500" />
+                </div>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       <AnalysisDrawer candidate={selectedCandidate} onClose={() => setSelectedCandidateId(null)} />
