@@ -37,8 +37,6 @@ export async function POST(request: Request) {
     const email = pickString(body.email);
     const password = pickString(body.password);
     const preferredCity = pickString(company?.city);
-    const proxyInput = null; // No manual proxy for beta
-
     let finalProxyConfig = {};
     const proxyHost = process.env.MANAGED_PROXY_HOST;
     const proxyPort = process.env.MANAGED_PROXY_PORT;
@@ -77,7 +75,7 @@ export async function POST(request: Request) {
       }
 
       finalProxyConfig = {
-        server: `http://${proxyHost}:${proxyPort || '10001'}`,
+        server: `${proxyHost}:${proxyPort || '3121'}`,
         username: managedUsername,
         password: proxyPass,
         is_managed: true,
