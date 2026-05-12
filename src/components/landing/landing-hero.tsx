@@ -7,7 +7,6 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useState, useRef, useEffect } from "react";
-import { useTranslations } from "next-intl";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 24 },
@@ -232,7 +231,6 @@ const FEATURES = [
 ];
 
 export function LandingHero() {
-  const t = useTranslations("Landing");
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -291,16 +289,16 @@ export function LandingHero() {
                 className={`text-[12px] font-semibold uppercase tracking-wider transition-colors
                   ${scrolled ? "text-pink-900/60 hover:text-pink-600" : "text-black/50 hover:text-black"}`}
               >
-                {t(`nav_${l.label.toLowerCase().replace(/ /g, "_")}`)}
+                {l.label}
               </a>
             ))}
           </div>
           <div className="flex-1 flex justify-end items-center gap-3 pr-2">
             <Link href="/login" className="hidden sm:block text-[13px] font-medium text-black/60 hover:text-pink-600 transition-colors px-4">
-              {t("nav_login")}
+              Login
             </Link>
             <Link href="/signup" className="text-[13px] font-bold text-white bg-gradient-to-r from-pink-500 to-violet-600 px-5 py-2.5 rounded-full hover:shadow-lg hover:shadow-pink-500/25 transition-all hover:scale-[1.02] active:scale-[0.98] shadow-md shadow-black/5">
-              {t("nav_signup")}
+              Sign Up
             </Link>
             <button className="md:hidden p-2 text-black/60 hover:text-black" onClick={() => setMobileMenuOpen(true)}>
               <Menu className="size-5" />
@@ -383,7 +381,7 @@ export function LandingHero() {
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
               <span className="relative inline-flex rounded-full size-2 bg-green-400" />
             </span>
-            <span className="text-[12px] font-medium text-indigo-300/90">{t("badge")}</span>
+            <span className="text-[12px] font-medium text-indigo-300/90">Now in beta · Free to join</span>
           </motion.div>
 
           <motion.h1
@@ -391,8 +389,9 @@ export function LandingHero() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, delay: 0.1 }}
             className="text-[clamp(2.8rem,8.5vw,6.5rem)] font-black tracking-tighter leading-[0.9] mb-8 text-white"
-            dangerouslySetInnerHTML={{ __html: t.raw("hero_title").replace(". ", ".<br />") }}
-          />
+          >
+            Verify every candidate.<br />Hire with confidence.
+          </motion.h1>
 
           <motion.p
             initial={{ opacity: 0, y: 20 }}
@@ -400,7 +399,7 @@ export function LandingHero() {
             transition={{ duration: 0.6, delay: 0.2 }}
             className="text-base md:text-lg text-slate-400 max-w-2xl mx-auto leading-relaxed mb-10"
           >
-            {t("hero_subtitle")}
+            Verytis cross-checks CVs against LinkedIn, scores each profile on Fit, Trust and Opportunity, and builds custom assessment pipelines — all in one AI-powered platform.
           </motion.p>
 
           <motion.div
@@ -413,14 +412,14 @@ export function LandingHero() {
               href="/beta-request"
               className="group inline-flex items-center gap-2 bg-white text-[#030712] px-7 py-3.5 rounded-xl font-bold text-sm hover:bg-slate-100 transition-all shadow-lg shadow-black/30"
             >
-              {t("cta_start")}
+              Join the Beta
               <ArrowRight className="size-4 group-hover:translate-x-0.5 transition-transform" />
             </Link>
             <Link
               href="/login"
               className="inline-flex items-center gap-2 text-sm font-medium text-slate-400 hover:text-white px-7 py-3.5 rounded-xl border border-white/[0.08] hover:border-white/[0.18] transition-all"
             >
-              {t("nav_login")}
+              Login
             </Link>
           </motion.div>
 
@@ -507,10 +506,10 @@ export function LandingHero() {
         <div className="max-w-6xl mx-auto">
           <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} className="text-center mb-20">
             <motion.p variants={fadeUp} custom={0} className="text-[10px] font-mono uppercase tracking-[0.3em] text-indigo-500 mb-4">
-              {t("nav_how_it_works")}
+              How it works
             </motion.p>
             <motion.h2 variants={fadeUp} custom={1} className="text-4xl md:text-5xl font-black tracking-tighter text-white">
-              {t("how_it_works_title")}
+              Two workflows, one platform
             </motion.h2>
           </motion.div>
 
@@ -527,7 +526,7 @@ export function LandingHero() {
                   <FileText className="size-4 text-indigo-400" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-white">{t("how_it_works_applications_title")}</h3>
+                  <h3 className="text-base font-bold text-white">Applications</h3>
                   <p className="text-[10px] text-slate-600">CV parsing · Pipeline generation · Scoring</p>
                 </div>
               </div>
@@ -540,8 +539,8 @@ export function LandingHero() {
                   <div key={step.num} className="flex gap-4 py-5 border-b border-white/[0.04] last:border-0 last:pb-0">
                     <span className="text-xs font-mono text-indigo-700 mt-0.5 w-6 flex-shrink-0">{step.num}</span>
                     <div>
-                      <h4 className="text-sm font-semibold text-white mb-1">{t(`app_step_${parseInt(step.num)}_title`)}</h4>
-                      <p className="text-xs text-slate-500 leading-relaxed">{t(`app_step_${parseInt(step.num)}_desc`)}</p>
+                      <h4 className="text-sm font-semibold text-white mb-1">{step.title}</h4>
+                      <p className="text-xs text-slate-500 leading-relaxed">{step.desc}</p>
                     </div>
                   </div>
                 ))}
@@ -561,7 +560,7 @@ export function LandingHero() {
                   <Brain className="size-4 text-violet-400" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-white">{t("how_it_works_sourcing_title")}</h3>
+                  <h3 className="text-base font-bold text-white">Sourcing</h3>
                   <p className="text-[10px] text-slate-600">Apollo · Lusha · LinkedIn · Tavily</p>
                 </div>
               </div>
@@ -574,8 +573,8 @@ export function LandingHero() {
                   <div key={step.num} className="flex gap-4 py-5 border-b border-white/[0.04] last:border-0 last:pb-0">
                     <span className="text-xs font-mono text-violet-700 mt-0.5 w-6 flex-shrink-0">{step.num}</span>
                     <div>
-                      <h4 className="text-sm font-semibold text-white mb-1">{t(`sourcing_step_${parseInt(step.num)}_title`)}</h4>
-                      <p className="text-xs text-slate-500 leading-relaxed">{t(`sourcing_step_${parseInt(step.num)}_desc`)}</p>
+                      <h4 className="text-sm font-semibold text-white mb-1">{step.title}</h4>
+                      <p className="text-xs text-slate-500 leading-relaxed">{step.desc}</p>
                     </div>
                   </div>
                 ))}
@@ -592,13 +591,13 @@ export function LandingHero() {
         <div className="max-w-6xl mx-auto">
           <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} className="text-center mb-20">
             <motion.p variants={fadeUp} custom={0} className="text-[10px] font-mono uppercase tracking-[0.3em] text-indigo-500 mb-4">
-              {t("nav_features")}
+              Features
             </motion.p>
             <motion.h2 variants={fadeUp} custom={1} className="text-4xl md:text-5xl font-black tracking-tighter text-white mb-6">
-              {t("features_title")}
+              Everything you need to hire right
             </motion.h2>
             <motion.p variants={fadeUp} custom={2} className="text-slate-400 max-w-xl mx-auto">
-              {t("features_subtitle")}
+              From sourcing to final decision — every step powered by AI.
             </motion.p>
           </motion.div>
 
@@ -618,9 +617,9 @@ export function LandingHero() {
                   </div>
                   <div className="flex items-center gap-3 mb-4">
                     <feature.icon className="size-5 text-white/30" />
-                    <h3 className="text-2xl font-black tracking-tight text-white">{t(`feature_${feature.tag.toLowerCase().split(' ')[0]}_title`)}</h3>
+                    <h3 className="text-2xl font-black tracking-tight text-white">{feature.title}</h3>
                   </div>
-                  <p className="text-slate-400 leading-relaxed text-sm max-w-sm">{t(`feature_${feature.tag.toLowerCase().split(' ')[0]}_desc`)}</p>
+                  <p className="text-slate-400 leading-relaxed text-sm max-w-sm">{feature.desc}</p>
                 </div>
                 <div className={`
                   p-6 flex items-center justify-center min-h-[220px] bg-[#04070f]
@@ -644,13 +643,13 @@ export function LandingHero() {
         <div className="max-w-5xl mx-auto">
           <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} className="text-center mb-16">
             <motion.p variants={fadeUp} custom={0} className="text-[10px] font-mono uppercase tracking-[0.3em] text-indigo-500 mb-4">
-              {t("nav_pricing")}
+              Pricing
             </motion.p>
             <motion.h2 variants={fadeUp} custom={1} className="text-4xl md:text-5xl font-black tracking-tighter text-white mb-4">
-              {t("pricing_title")}
+              Start free, scale when ready
             </motion.h2>
             <motion.p variants={fadeUp} custom={2} className="text-slate-400 max-w-sm mx-auto">
-              {t("pricing_subtitle")}
+              200 credits included. No credit card needed.
             </motion.p>
           </motion.div>
 
@@ -668,12 +667,12 @@ export function LandingHero() {
                 </div>
               </div>
               <div className="pt-3">
-                <p className="text-[10px] font-mono text-indigo-400 uppercase tracking-widest mb-4">{t("pricing_free_name")}</p>
+                <p className="text-[10px] font-mono text-indigo-400 uppercase tracking-widest mb-4">Beta Access</p>
                 <div className="flex items-baseline gap-1 mb-2">
                   <span className="text-5xl font-black text-white">0€</span>
                   <span className="text-slate-500 text-sm">/month</span>
                 </div>
-                <p className="text-slate-500 text-sm mb-8">{t("pricing_free_desc")}</p>
+                <p className="text-slate-500 text-sm mb-8">Everything you need to test Verytis end-to-end</p>
                 <div className="space-y-3 mb-8">
                   {[
                     { label: "200 AI credits / month", sub: "1 credit per analysis or verification" },

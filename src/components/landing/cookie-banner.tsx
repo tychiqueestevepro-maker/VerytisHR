@@ -3,13 +3,11 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Cookie, X } from "lucide-react";
-import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/routing";
 
 const COOKIE_KEY = "verytis_cookie_consent";
 
 export function CookieBanner() {
-  const t = useTranslations("CookieBanner");
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -39,7 +37,7 @@ export function CookieBanner() {
         >
           <button
             onClick={decline}
-            aria-label={t("dismiss")}
+            aria-label="Dismiss"
             className="absolute right-3 top-3 rounded-md p-1 text-zinc-500 transition-colors hover:text-white"
           >
             <X className="size-4" />
@@ -49,16 +47,16 @@ export function CookieBanner() {
             <span className="flex size-8 items-center justify-center rounded-lg bg-indigo-500/20">
               <Cookie className="size-4 text-indigo-400" />
             </span>
-            <p className="text-sm font-semibold text-white">{t("title")}</p>
+            <p className="text-sm font-semibold text-white">Cookies</p>
           </div>
 
           <p className="mb-4 text-xs leading-relaxed text-zinc-400">
-            {t("description")}{" "}
+            We use cookies to improve your experience and analyze our traffic. By continuing, you agree to our{" "}
             <Link
               href="/privacy"
               className="underline underline-offset-2 hover:text-white"
             >
-              {t("privacy_link")}
+              privacy policy
             </Link>
             .
           </p>
@@ -68,13 +66,13 @@ export function CookieBanner() {
               onClick={decline}
               className="flex-1 rounded-lg border border-white/10 py-2 text-xs font-medium text-zinc-400 transition-colors hover:border-white/20 hover:text-white"
             >
-              {t("decline")}
+              Decline
             </button>
             <button
               onClick={accept}
               className="flex-1 rounded-lg bg-indigo-600 py-2 text-xs font-medium text-white transition-colors hover:bg-indigo-500"
             >
-              {t("accept")}
+              Accept
             </button>
           </div>
         </motion.div>
