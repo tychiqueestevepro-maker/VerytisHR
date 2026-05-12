@@ -50,10 +50,15 @@ export async function POST(request: Request) {
     } else if (proxyHost && proxyUser && proxyPass) {
       // Fallback: static user:pass proxy
       const countryCode = (pickString(company?.country) || "FR").toLowerCase();
+      const cityCode = pickString(company?.city)?.toLowerCase().replace(/[^a-z0-9]/g, ''); // sanitize city for proxy
+
       let managedUsername = proxyUser;
-      // Decodo (new Smartproxy) uses -country- format; legacy used -area-
+      // Decodo (new Smartproxy) uses -country- and -city- format
       if (!managedUsername.includes("-country-") && !managedUsername.includes("-area-")) {
         managedUsername = `${managedUsername}-country-${countryCode}`;
+        if (cityCode) {
+          managedUsername = `${managedUsername}-city-${cityCode}`;
+        }
       }
       finalProxyConfig = {
         server: `${proxyHost}:${proxyPort || '3121'}`,
@@ -62,6 +67,7 @@ export async function POST(request: Request) {
         is_managed: true,
       };
     }
+
 
     if (!email || !password) {
       return NextResponse.json({ error: "Email and password are required" }, { status: 400 });
