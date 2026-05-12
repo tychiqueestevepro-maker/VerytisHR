@@ -676,8 +676,11 @@ export async function runLinkedInLoginFlow(accountId: string) {
       'Accept-Language': 'fr-FR,fr;q=0.9',
     });
 
+    let detectedIp = null;
+
     // --- Phase 2: Pre-flight IP check ---
     if (resolvedProxy) {
+
       console.log(`[Scraper] Testing native proxy tunnel...`);
 
       try {
@@ -686,7 +689,9 @@ export async function runLinkedInLoginFlow(accountId: string) {
         const ip = await page.evaluate(() => document.body.innerText.trim());
 
         console.log(`[Scraper] ✅ Proxy OK — IP: ${ip}`);
+        detectedIp = ip;
         await supabase.from("linkedin_accounts").update({ last_detected_ip: ip }).eq("id", accountId);
+
       } catch (proxyErr: any) {
         console.error(`[Scraper] ❌ Proxy tunnel FAILED: ${proxyErr.message}`);
         throw new Error(`Proxy tunnel échoué — ${proxyErr.message}`);
@@ -937,11 +942,34 @@ export async function runLinkedInLoginFlow(accountId: string) {
         user_agent: await page.evaluate(() => navigator.userAgent)
       });
 
-      // Update account
+      // Extract profile name for UI feedback
+      const accountInfo = await page.evaluate(() => {
+        const nameEl = document.querySelector('.feed-identity-module__actor-link, .nav-settings__member-name, .t-16.t-black.t-bold');
+        const locationEl = document.querySelector('.feed-identity-module__location, .t-12.t-black--light.t-normal');
+        return {
+          name: nameEl ? nameEl.textContent?.trim() : null,
+          location: locationEl ? locationEl.textContent?.trim() : null
+        };
+      });
+
+      let firstName = null;
+      let lastName = null;
+      if (accountInfo.name) {
+        const parts = accountInfo.name.split(' ');
+        firstName = parts[0];
+        lastName = parts.slice(1).join(' ');
+      }
+
+      // Update account with real name and IP
       await supabase.from("linkedin_accounts").update({ 
         status: "connected",
+        first_name: firstName,
+        last_name: lastName,
+        last_detected_ip: detectedIp,
+        preferred_city: accountInfo.location || preferredCity,
         last_error: null 
       }).eq("id", accountId);
+
 
       return { success: true };
     } else {
