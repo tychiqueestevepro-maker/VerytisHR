@@ -45,7 +45,14 @@
   "optionalDependencies": {
     "@parcel/watcher-linux-x64-glibc": "^2.5.6",
     "@parcel/watcher-linux-x64-musl": "^2.5.6",
+    "@next/swc-linux-x64-gnu": "16.2.4",
+    "@next/swc-linux-x64-musl": "16.2.4",
     "@swc/core-linux-x64-gnu": "^1.15.33",
+    "@swc/core-linux-x64-musl": "^1.15.33",
+    "@tailwindcss/oxide-linux-x64-gnu": "4.2.4",
+    "@tailwindcss/oxide-linux-x64-musl": "4.2.4",
+    "@unrs/resolver-binding-linux-x64-gnu": "^1.11.1",
+    "@unrs/resolver-binding-linux-x64-musl": "^1.11.1",
     "lightningcss-linux-x64-gnu": "^1.32.0",
     "lightningcss-linux-x64-musl": "^1.32.0"
   },
