@@ -214,20 +214,19 @@ export async function scrapeLinkedInProfile(
     };
 
     if (proxyConfig?.server && proxyConfig?.username && proxyConfig?.password) {
-      const proxyChain = (await import("proxy-chain")) as any;
       const rawServer = String(proxyConfig.server).replace(/^https?:\/\//, "");
-      const upstream = `http://${proxyConfig.username}:${proxyConfig.password}@${rawServer}`;
-      try {
-        scrapeAnonProxy = await proxyChain.anonymizeProxy(upstream);
-        launchOptions.args.push(`--proxy-server=${scrapeAnonProxy}`);
-      } catch (e: any) {
-        throw new Error(`[Scraper] Proxy anonymization failed: ${e.message}`);
-      }
+      launchOptions.args.push(`--proxy-server=http://${rawServer}`);
     }
 
     browser = await puppeteer.launch(launchOptions);
     const page = await browser.newPage();
-    // No page.authenticate() needed — proxy-chain handles auth
+    
+    if (proxyConfig?.server && proxyConfig?.username && proxyConfig?.password) {
+      let rawUsername = proxyConfig.username.replace(/\s+/g, "");
+      if (rawUsername.includes("smart-elzkxq8jgewp")) rawUsername = rawUsername.replace("-country-fr", "");
+      await page.authenticate({ username: rawUsername, password: proxyConfig.password.replace(/\s+/g, "") });
+    }
+
 
     // Stealth masks
     await page.evaluateOnNewDocument(() => {
@@ -564,14 +563,10 @@ export async function runLinkedInLoginFlow(accountId: string) {
 
 
     if (resolvedProxy) {
-      const upstream = resolvedProxy.username && resolvedProxy.password
-        ? `http://${resolvedProxy.username}:${resolvedProxy.password}@${resolvedProxy.server}`
-        : `http://${resolvedProxy.server}`;
-      console.log(`[Scraper] proxy-chain upstream: ${upstream.replace(/:([^:@]+)@/, ':***@')}`);
-      anonProxyUrl = await proxyChain.anonymizeProxy(upstream);
-      launchArgs.push(`--proxy-server=${anonProxyUrl}`);
-      console.log(`[Scraper] proxy-chain local tunnel: ${anonProxyUrl}`);
+      launchArgs.push(`--proxy-server=http://${resolvedProxy.server}`);
+      console.log(`[Scraper] Using native Puppeteer proxy authentication for: ${resolvedProxy.server}`);
     } else if (proxy && (proxy.server || proxy.api_url)) {
+
       throw new Error("Proxy configuré mais aucune IP résolue — vérifiez les credentials Smartproxy.");
     }
 
@@ -622,7 +617,11 @@ export async function runLinkedInLoginFlow(accountId: string) {
 
     browser = await puppeteer.launch({ headless: true, executablePath: chromePath, args: launchArgs });
     let page = await browser.newPage();
-    // No page.authenticate() needed — proxy-chain handles auth in the local tunnel
+    
+    // Native proxy authentication (now that credentials are sanitized and correct)
+    if (resolvedProxy && resolvedProxy.username && resolvedProxy.password) {
+      await page.authenticate({ username: resolvedProxy.username, password: resolvedProxy.password });
+    }
 
     // User-Agent moderne
     await page.setUserAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
@@ -653,8 +652,9 @@ export async function runLinkedInLoginFlow(accountId: string) {
     });
 
     // --- Phase 2: Pre-flight IP check ---
-    if (anonProxyUrl) {
-      console.log(`[Scraper] Testing proxy tunnel via proxy-chain...`);
+    if (resolvedProxy) {
+      console.log(`[Scraper] Testing native proxy tunnel...`);
+
       try {
         // Use a reliable HTTPS IP check service
         await page.goto("https://api.ipify.org", { waitUntil: "networkidle2", timeout: 20000 });
