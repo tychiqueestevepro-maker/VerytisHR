@@ -656,9 +656,10 @@ export async function runLinkedInLoginFlow(accountId: string) {
     if (anonProxyUrl) {
       console.log(`[Scraper] Testing proxy tunnel via proxy-chain...`);
       try {
-        // Use HTTP instead of HTTPS to avoid SSL tunnel overhead/issues for IP check
-        await page.goto("http://ifconfig.me/ip", { waitUntil: "networkidle2", timeout: 20000 });
+        // Use a reliable HTTPS IP check service
+        await page.goto("https://api.ipify.org", { waitUntil: "networkidle2", timeout: 20000 });
         const ip = await page.evaluate(() => document.body.innerText.trim());
+
         console.log(`[Scraper] ✅ Proxy OK — IP: ${ip}`);
         await supabase.from("linkedin_accounts").update({ last_detected_ip: ip }).eq("id", accountId);
       } catch (proxyErr: any) {
