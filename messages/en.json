@@ -64,7 +64,8 @@
     "company_profile": "Company Profile",
     "team": "Team",
     "criteria": "Criteria",
-    "billing_credits": "Billing / Credits"
+    "billing_credits": "Billing / Credits",
+    "profile": "Profile"
   },
   "FlowCommandBar": {
     "flow": "Focus",

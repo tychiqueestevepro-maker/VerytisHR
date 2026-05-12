@@ -209,7 +209,9 @@ export async function scrapeLinkedInProfile(
       try {
         scrapeAnonProxy = await proxyChain.anonymizeProxy(upstream);
         launchOptions.args.push(`--proxy-server=${scrapeAnonProxy}`);
-      } catch { /* fallback to direct */ }
+      } catch (e: any) {
+        throw new Error(`[Scraper] Proxy anonymization failed: ${e.message}`);
+      }
     }
 
     browser = await puppeteer.launch(launchOptions);
@@ -596,27 +598,7 @@ export async function runLinkedInLoginFlow(accountId: string) {
         await supabase.from("linkedin_accounts").update({ last_detected_ip: ip }).eq("id", accountId);
       } catch (proxyErr: any) {
         console.error(`[Scraper] ❌ Proxy tunnel FAILED: ${proxyErr.message}`);
-        console.warn(`[Scraper] Falling back to direct connection...`);
-        if (anonProxyUrl) {
-          await proxyChain.closeAnonymizedProxy(anonProxyUrl, true).catch(() => {});
-          anonProxyUrl = null;
-        }
-        // browser will be closed just below
-        await browser.close();
-        browser = await puppeteer.launch({
-          headless: true,
-          executablePath: chromePath,
-          args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-blink-features=AutomationControlled", "--window-size=1280,800"],
-        });
-        page = await browser.newPage();
-        await page.setUserAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
-        await page.evaluateOnNewDocument(() => { Object.defineProperty(navigator, 'webdriver', { get: () => undefined }); });
-        await page.setExtraHTTPHeaders({ 'Accept-Language': 'fr-FR,fr;q=0.9' });
-        try {
-          await page.goto("https://api.ip.cc", { waitUntil: "networkidle2", timeout: 15000 });
-          const directIp = await page.evaluate(() => document.body.innerText.trim());
-          console.log(`[Scraper] Direct IP: ${directIp}`);
-        } catch { /* non-critical */ }
+        throw new Error(`[Scraper] Proxy tunnel failed. Direct connection is disabled.`);
       }
     }
     

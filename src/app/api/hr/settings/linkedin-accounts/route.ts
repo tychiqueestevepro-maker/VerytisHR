@@ -51,7 +51,10 @@ export async function POST(request: Request) {
       // Fallback: static user:pass proxy
       const countryCode = (pickString(company?.country) || "FR").toLowerCase();
       let managedUsername = proxyUser;
-      if (!managedUsername.includes("-area-")) managedUsername = `${managedUsername}-area-${countryCode}`;
+      // Decodo (new Smartproxy) uses -country- format; legacy used -area-
+      if (!managedUsername.includes("-country-") && !managedUsername.includes("-area-")) {
+        managedUsername = `${managedUsername}-country-${countryCode}`;
+      }
       finalProxyConfig = {
         server: `${proxyHost}:${proxyPort || '3121'}`,
         username: managedUsername,
