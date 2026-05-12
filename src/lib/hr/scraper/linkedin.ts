@@ -23,12 +23,16 @@ async function fetchProxyFromApiUrl(apiUrl: string): Promise<{ server: string; u
     const parts = line.split(":");
     // host:port:user:pass
     if (parts.length === 4) {
+      let rawUsername = parts[2].replace(/\s+/g, '');
+      if (rawUsername.includes("smart-elzkxq8jgewp")) rawUsername = rawUsername.replace("-country-fr", "");
+      
       return { 
         server: `${parts[0].trim()}:${parts[1].trim()}`, 
-        username: parts[2].replace(/\s+/g, ''), 
+        username: rawUsername, 
         password: parts[3].replace(/\s+/g, '') 
       };
     }
+
     // host:port
     if (parts.length >= 2) return { server: `${parts[0].trim()}:${parts[1].trim()}` };
     return null;
@@ -545,12 +549,19 @@ export async function runLinkedInLoginFlow(accountId: string) {
       console.log(`[Scraper] Proxy from API: ${resolvedProxy?.server ?? "none"}`);
     } else if (proxy?.server) {
       const rawServer = String(proxy.server).replace(/^https?:\/\//, "").replace(/\s+/g, "");
+      let rawUsername = proxy.username ? String(proxy.username).replace(/\s+/g, "") : undefined;
+      // Forcefully remove -country-fr if the user accidentally added it but didn't configure it in Smartproxy
+      if (rawUsername && rawUsername.includes("smart-elzkxq8jgewp")) {
+        rawUsername = rawUsername.replace("-country-fr", "");
+      }
+      
       resolvedProxy = { 
         server: rawServer, 
-        username: proxy.username ? String(proxy.username).replace(/\s+/g, "") : undefined, 
+        username: rawUsername, 
         password: proxy.password ? String(proxy.password).replace(/\s+/g, "") : undefined 
       };
     }
+
 
     if (resolvedProxy) {
       const upstream = resolvedProxy.username && resolvedProxy.password
