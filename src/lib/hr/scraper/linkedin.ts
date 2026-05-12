@@ -563,22 +563,30 @@ export async function runLinkedInLoginFlow(accountId: string) {
         const socket: any = net.createConnection({ host: proxyHost, port: proxyPort, timeout: 10000 });
         socket.on("connect", () => {
           const auth = Buffer.from(`${username}:${password}`).toString("base64");
-          // Test with a simple HTTP HEAD to a stable site
-          socket.write(`CONNECT httpbin.org:80 HTTP/1.1\r\nHost: httpbin.org:80\r\nProxy-Authorization: Basic ${auth}\r\nProxy-Connection: keep-alive\r\n\r\n`);
+          // Send a standard HTTP GET through the proxy to get the real error message
+          socket.write(`GET http://httpbin.org/ip HTTP/1.1\r\nHost: httpbin.org\r\nProxy-Authorization: Basic ${auth}\r\nConnection: close\r\n\r\n`);
         });
+        
+        let responseData = "";
         socket.on("data", (data: Buffer) => {
-          const resp = data.toString().substring(0, 200);
-          console.log(`[Scraper] Raw proxy response: ${JSON.stringify(resp)}`);
-          if (resp.includes("200 OK") || resp.includes("200 Connection established")) {
+          responseData += data.toString();
+        });
+
+        socket.on("end", () => {
+          console.log(`[Scraper] Raw proxy response:\n${responseData.substring(0, 500)}`);
+          if (responseData.includes("200 OK") || responseData.includes("origin")) {
             console.log(`[Scraper] ✅ Raw TCP to proxy OK`);
-            socket.destroy();
             resolve();
           } else {
-            socket.destroy();
-            reject(new Error(`Proxy a refusé la connexion: ${resp}`));
+            // Extract the body if present
+            const bodySplit = responseData.split("\r\n\r\n");
+            const body = bodySplit.length > 1 ? bodySplit[1].trim() : "No body";
+            reject(new Error(`Proxy a refusé la connexion. Code/Body: ${body}`));
           }
         });
+
         socket.on("error", (e: Error) => {
+
           console.error(`[Scraper] ❌ Raw TCP to proxy FAILED: ${e.message}`);
           reject(new Error(`Proxy inaccessible (TCP): ${e.message}`));
         });
