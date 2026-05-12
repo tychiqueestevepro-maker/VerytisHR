@@ -3,4 +3,4 @@ installCommand = "npm install --legacy-peer-deps"
 buildCommand = "npm run build"
 
 [deploy]
-startCommand = "npm start"
+startCommand = "next start -p ${PORT:-3000}"
