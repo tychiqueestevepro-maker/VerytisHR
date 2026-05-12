@@ -674,17 +674,31 @@ export async function runLinkedInLoginFlow(accountId: string) {
     // Étape 2 : Aller sur la page de login via le lien
     await page.goto("https://www.linkedin.com/login", { waitUntil: "networkidle2", timeout: 30000 });
 
-    const userSelector = "#username, input[name='session_key']";
-    const passSelector = "#password, input[name='session_password']";
+    const userSelector = "#username, #session_key, input[name='session_key'], input[type='email'], input[type='text']";
+    const passSelector = "#password, #session_password, input[name='session_password'], input[type='password']";
     
     try {
+      // Wait for either the login fields OR a security challenge indicator
       await page.waitForSelector(userSelector, { timeout: 15000 });
     } catch (e) {
       const title = await page.title();
-      const body = await page.evaluate(() => document.body.innerText.substring(0, 300));
-      console.error(`[Scraper] Detection. Title: "${title}". Body: "${body}..."`);
-      throw new Error(`LinkedIn bloque l'accès (Title: ${title}). Testez dans 10 min, LinkedIn a temporairement banni cette IP.`);
+      const body = await page.evaluate(() => document.body.innerText);
+      const hasCaptcha = body.includes("CAPTCHA") || body.includes("security check") || body.includes("vérification de sécurité") || body.includes("prouvez que vous n'êtes pas un robot");
+      
+      console.error(`[Scraper] Detection. Title: "${title}". Captcha detected: ${hasCaptcha}`);
+      
+      if (hasCaptcha) {
+        throw new Error(`LinkedIn demande une vérification humaine (CAPTCHA). L'IP du proxy est probablement trop sollicitée. Testez dans 10 min ou changez de sous-compte.`);
+      }
+
+      // If we don't see the fields but we don't see a captcha either, maybe it's just a different layout
+      // Let's try one last time to find ANY input
+      const inputs = await page.$$("input");
+      if (inputs.length < 2) {
+        throw new Error(`LinkedIn bloque l'accès ou la page est illisible (Title: ${title}).`);
+      }
     }
+
 
     await new Promise(r => setTimeout(r, 2000));
     await page.type(userSelector, email, { delay: 180 });
