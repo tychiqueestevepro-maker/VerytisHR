@@ -1,9 +1,8 @@
 [build]
 builder = "nixpacks"
-installCommand = "npm install --legacy-peer-deps"
 
 [phases.setup]
-nixPkgs = ["...", "google-chrome"]
+nixPkgs = ["nodejs_20"]
 
 [phases.install]
 dependsOn = ["setup"]
@@ -12,3 +11,6 @@ cmds = ["npm install --legacy-peer-deps"]
 [phases.build]
 dependsOn = ["install"]
 cmds = ["npm run build"]
+
+[deploy]
+startCommand = "npm start"
