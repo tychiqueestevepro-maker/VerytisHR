@@ -1,6 +1,10 @@
 [build]
-installCommand = "npm install --legacy-peer-deps"
+installCommand = "npm install --legacy-peer-deps && npx puppeteer browsers install chrome"
 buildCommand = "npm run build && mkdir -p .next/standalone/.next/static && cp -r .next/static/. .next/standalone/.next/static/ && cp -r public .next/standalone/public"
 
 [deploy]
 startCommand = "HOSTNAME=0.0.0.0 PORT=${PORT:-3000} node .next/standalone/server.js"
+
+[variables]
+PUPPETEER_EXECUTABLE_PATH = "/usr/bin/google-chrome-stable"
+PUPPETEER_SKIP_CHROMIUM_DOWNLOAD = "false"

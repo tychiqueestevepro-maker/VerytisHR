@@ -3,6 +3,24 @@ import { encryptLinkedInCredential, decryptLinkedInCredential } from "../crypto"
 import { createSupabaseServiceClient } from "../../supabase/server";
 
 /**
+ * Résout le chemin exécutable de Chrome selon l'environnement.
+ * - Variable d'env PUPPETEER_EXECUTABLE_PATH (Railway/Docker)
+ * - Sinon : chemin bundlé par Puppeteer lui-même (local)
+ */
+async function getChromePath(): Promise<string | undefined> {
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+    return process.env.PUPPETEER_EXECUTABLE_PATH;
+  }
+  try {
+    const { executablePath } = (await import("puppeteer")) as any;
+    const resolved = typeof executablePath === "function" ? executablePath() : executablePath;
+    return resolved || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * LinkedIn Scraper Service
  * 
  * Ported logic from VerytisAGNT LinkedIn Extension.
@@ -103,13 +121,16 @@ export async function scrapeLinkedInProfile(
   let browser = null;
   try {
     const puppeteer = (await import("puppeteer")) as any;
-    console.log(`[Scraper] Launching browser for: ${targetUrl}`);
+    const chromePath = await getChromePath();
+    console.log(`[Scraper] Launching browser for: ${targetUrl} (chrome: ${chromePath ?? "auto"})`);
     
     const launchOptions: any = {
-      headless: "new",
+      headless: true,
+      executablePath: chromePath,
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
         "--disable-blink-features=AutomationControlled",
         "--window-size=1280,800",
         "--lang=fr-FR,fr"
@@ -358,8 +379,10 @@ export async function getLinkedInSessionIdentity(cookie: string): Promise<{ name
   let browser = null;
   try {
     const puppeteer = (await import("puppeteer")) as any;
+    const chromePath = await getChromePath();
     browser = await puppeteer.launch({
       headless: true,
+      executablePath: chromePath,
       args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
     });
 
@@ -423,12 +446,16 @@ export async function runLinkedInLoginFlow(accountId: string) {
   let browser = null;
   try {
     const puppeteer = (await import("puppeteer")) as any;
+    const chromePath = await getChromePath();
+    console.log(`[Scraper] runLinkedInLoginFlow — chrome: ${chromePath ?? "auto"}, proxy: ${proxy?.server ?? "none"}`);
     
     const launchOptions: any = {
-      headless: "new",
+      headless: true,
+      executablePath: chromePath,
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
         "--disable-blink-features=AutomationControlled",
         "--window-size=1280,800",
       ],
