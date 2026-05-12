@@ -1,16 +1,7 @@
 [build]
 builder = "nixpacks"
-
-[phases.setup]
-nixPkgs = ["nodejs_20"]
-
-[phases.install]
-dependsOn = ["setup"]
-cmds = ["npm install --legacy-peer-deps"]
-
-[phases.build]
-dependsOn = ["install"]
-cmds = ["npm run build"]
+installCommand = "npm install --legacy-peer-deps"
+buildCommand = "npm run build"
 
 [deploy]
 startCommand = "npm start"
