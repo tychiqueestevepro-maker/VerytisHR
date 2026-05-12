@@ -7,6 +7,16 @@ const withNextIntl = createNextIntlPlugin(
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   serverExternalPackages: ["pdf-parse", "pdfjs-dist", "puppeteer"],
+  async redirects() {
+    return [
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "www.verytis.com" }],
+        destination: "https://verytis.com/:path*",
+        permanent: true,
+      },
+    ];
+  },
 };
 
 export default withNextIntl(nextConfig);
