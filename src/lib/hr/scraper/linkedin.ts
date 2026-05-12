@@ -8,15 +8,23 @@ async function fetchProxyFromApiUrl(apiUrl: string): Promise<{ server: string; u
   try {
     const res = await fetch(apiUrl);
     const text = (await res.text()).trim();
+
+    // Detect JSON error response (e.g. {"code":202,"msg":"..."})
+    if (text.startsWith("{") || text.startsWith("[")) {
+      try {
+        const json = JSON.parse(text);
+        console.warn(`[Scraper] Smartproxy API error: code=${json.code} msg=${json.msg ?? json.message ?? text}`);
+      } catch { console.warn(`[Scraper] Smartproxy API returned unexpected JSON: ${text.substring(0, 200)}`); }
+      return null;
+    }
+
     const line = text.split(/[\n\r]/)[0].trim();
     if (!line) return null;
     const parts = line.split(":");
-    if (parts.length === 4) {
-      return { server: `${parts[0]}:${parts[1]}`, username: parts[2], password: parts[3] };
-    }
-    if (parts.length >= 2) {
-      return { server: `${parts[0]}:${parts[1]}` };
-    }
+    // host:port:user:pass
+    if (parts.length === 4) return { server: `${parts[0]}:${parts[1]}`, username: parts[2], password: parts[3] };
+    // host:port
+    if (parts.length >= 2) return { server: `${parts[0]}:${parts[1]}` };
     return null;
   } catch (e: any) {
     console.warn(`[Scraper] fetchProxyFromApiUrl failed: ${e.message}`);
