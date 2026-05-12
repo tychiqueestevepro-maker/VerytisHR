@@ -553,37 +553,33 @@ export async function runLinkedInLoginFlow(accountId: string) {
       throw new Error("Proxy configuré mais aucune IP résolue — vérifiez les credentials Smartproxy.");
     }
 
-    // Pre-flight: test Node.js HTTP CONNECT to proxy before launching Chrome
+    // Pre-flight: raw TCP socket to see exact proxy response (tolerant of malformed HTTP)
     if (resolvedProxy) {
       const { server, username, password } = resolvedProxy;
       const [proxyHost, proxyPortStr] = server.split(":");
       const proxyPort = parseInt(proxyPortStr || "3120", 10);
-      await new Promise<void>((resolve, reject) => {
-        const http = require("http");
-        const req = http.request({
-          host: proxyHost,
-          port: proxyPort,
-          method: "CONNECT",
-          path: "api.ip.cc:443",
-          headers: {
-            "Proxy-Authorization": `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`,
-          },
-          timeout: 10000,
+      await new Promise<void>((resolve) => {
+        const net = require("net");
+        const socket: any = net.createConnection({ host: proxyHost, port: proxyPort, timeout: 10000 });
+        socket.on("connect", () => {
+          const auth = Buffer.from(`${username}:${password}`).toString("base64");
+          socket.write(`CONNECT api.ip.cc:443 HTTP/1.1\r\nHost: api.ip.cc:443\r\nProxy-Authorization: Basic ${auth}\r\nProxy-Connection: keep-alive\r\n\r\n`);
         });
-        req.on("connect", (_res: any) => {
-          console.log(`[Scraper] ✅ Node.js CONNECT to proxy OK (${server})`);
-          req.socket?.destroy();
+        socket.on("data", (data: Buffer) => {
+          const resp = data.toString().substring(0, 200);
+          console.log(`[Scraper] Raw proxy response: ${JSON.stringify(resp)}`);
+          socket.destroy();
+          resolve(); // don't block — just log
+        });
+        socket.on("error", (e: Error) => {
+          console.error(`[Scraper] Raw TCP to proxy FAILED: ${e.message}`);
+          resolve(); // don't block on pre-flight error
+        });
+        socket.on("timeout", () => {
+          console.error(`[Scraper] Raw TCP to proxy TIMEOUT`);
+          socket.destroy();
           resolve();
         });
-        req.on("error", (e: Error) => {
-          console.error(`[Scraper] ❌ Node.js CONNECT to proxy FAILED: ${e.message}`);
-          reject(new Error(`Proxy inaccessible depuis Railway: ${e.message}`));
-        });
-        req.on("timeout", () => {
-          req.destroy();
-          reject(new Error(`Proxy timeout (10s) depuis Railway — port ${proxyPort} bloqué ?`));
-        });
-        req.end();
       });
     }
 
@@ -629,7 +625,7 @@ export async function runLinkedInLoginFlow(accountId: string) {
         await supabase.from("linkedin_accounts").update({ last_detected_ip: ip }).eq("id", accountId);
       } catch (proxyErr: any) {
         console.error(`[Scraper] ❌ Proxy tunnel FAILED: ${proxyErr.message}`);
-        throw new Error(`[Scraper] Proxy tunnel failed. Direct connection is disabled.`);
+        throw new Error(`Proxy tunnel échoué — ${proxyErr.message}`);
       }
     }
     
