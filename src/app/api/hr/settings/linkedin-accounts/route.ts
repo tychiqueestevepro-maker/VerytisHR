@@ -40,6 +40,8 @@ export async function POST(request: Request) {
     // Use user-selected proxy settings or fallback to company profile
     const selectedCountry = pickString(body.proxyCountry) || pickString(company?.country) || "fr";
     const countryCodeUpper = selectedCountry.toUpperCase();
+    const preferredCity = pickString(body.proxyCity) || pickString(company?.city);
+
     
     let finalProxyConfig = {};
     const proxyApiUrl = process.env.SMARTPROXY_API_URL;

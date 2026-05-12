@@ -23,9 +23,10 @@ import { cn } from "@/lib/utils";
 const setupSchema = z.object({
   email: z.string().email("Email invalide"),
   password: z.string().min(6, "Mot de passe trop court"),
-  proxyCountry: z.string().default("fr"),
+  proxyCountry: z.string(),
   proxyCity: z.string().optional(),
 });
+
 
 
 type SetupFormValues = z.infer<typeof setupSchema>;
