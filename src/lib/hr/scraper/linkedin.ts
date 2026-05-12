@@ -478,31 +478,36 @@ export async function runLinkedInLoginFlow(accountId: string) {
   const proxy = account.proxy_config as any;
 
   let browser = null;
+  let useProxy = Boolean(proxy && proxy.server);
+  
   try {
     const puppeteer = (await import("puppeteer")) as any;
     const chromePath = await getChromePath();
-    console.log(`[Scraper] runLinkedInLoginFlow — chrome: ${chromePath ?? "auto"}, proxy: ${proxy?.server ?? "none"}`);
+    console.log(`[Scraper] runLinkedInLoginFlow — chrome: ${chromePath ?? "auto"}, proxy: ${proxy?.server ?? "none"}, user: ${proxy?.username ?? "none"}`);
     
-    const launchOptions: any = {
-      headless: true,
-      executablePath: chromePath,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-blink-features=AutomationControlled",
-        "--window-size=1280,800",
-      ],
+    // --- Phase 1: Launch browser (with proxy if configured) ---
+    const buildLaunchOptions = (withProxy: boolean) => {
+      const opts: any = {
+        headless: true,
+        executablePath: chromePath,
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-blink-features=AutomationControlled",
+          "--window-size=1280,800",
+        ],
+      };
+      if (withProxy && proxy && proxy.server) {
+        opts.args.push(`--proxy-server=${proxy.server}`);
+      }
+      return opts;
     };
 
-    if (proxy && proxy.server) {
-      launchOptions.args.push(`--proxy-server=${proxy.server}`);
-    }
+    browser = await puppeteer.launch(buildLaunchOptions(useProxy));
+    let page = await browser.newPage();
 
-    browser = await puppeteer.launch(launchOptions);
-    const page = await browser.newPage();
-
-    if (proxy && proxy.username && proxy.password) {
+    if (useProxy && proxy.username && proxy.password) {
       await page.authenticate({
         username: proxy.username,
         password: proxy.password,
@@ -537,28 +542,59 @@ export async function runLinkedInLoginFlow(accountId: string) {
       'Accept-Language': 'fr-FR,fr;q=0.9',
     });
 
-    // --- Proxy Verification ---
-    if (proxy && proxy.is_managed) {
-      console.log(`[Scraper] Proxy setup...`);
+    // --- Phase 2: Pre-flight proxy check ---
+    if (useProxy) {
+      console.log(`[Scraper] Testing proxy tunnel (HTTPS)...`);
       try {
-        await page.goto("http://api.ipify.org?format=json", { waitUntil: "networkidle2", timeout: 15000 });
+        // Test with an HTTPS URL to verify the CONNECT tunnel works
+        await page.goto("https://httpbin.org/ip", { waitUntil: "networkidle2", timeout: 20000 });
         const text = await page.evaluate(() => document.body.innerText);
-        const ipInfo = JSON.parse(text);
-        console.log(`[Scraper] Proxy IP: ${ipInfo.ip}`);
-        await supabase.from("linkedin_accounts").update({ last_detected_ip: ipInfo.ip }).eq("id", accountId);
-      } catch (err: any) {
-        console.warn("[Scraper] Proxy check skipped:", err.message);
+        console.log(`[Scraper] ✅ Proxy tunnel OK — IP: ${text.trim()}`);
+        
+        // Save detected IP
+        try {
+          const ipInfo = JSON.parse(text);
+          if (ipInfo.origin) {
+            await supabase.from("linkedin_accounts").update({ last_detected_ip: ipInfo.origin }).eq("id", accountId);
+          }
+        } catch { /* ignore parse errors */ }
+      } catch (proxyErr: any) {
+        console.error(`[Scraper] ❌ Proxy tunnel FAILED: ${proxyErr.message}`);
+        console.warn(`[Scraper] Proxy details — server: ${proxy.server}, user: ${proxy.username}`);
+        console.warn(`[Scraper] Falling back to DIRECT connection (no proxy)...`);
+        
+        // Close the broken browser and restart without proxy
+        useProxy = false;
+        await browser.close();
+        browser = await puppeteer.launch(buildLaunchOptions(false));
+        page = await browser.newPage();
+        
+        // Re-apply stealth
+        await page.setUserAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
+        await page.evaluateOnNewDocument(() => {
+          Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+          Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
+          Object.defineProperty(navigator, 'languages', { get: () => ['fr-FR', 'fr', 'en'] });
+        });
+        await page.setExtraHTTPHeaders({ 'Accept-Language': 'fr-FR,fr;q=0.9' });
+        
+        // Check our direct IP
+        try {
+          await page.goto("https://httpbin.org/ip", { waitUntil: "networkidle2", timeout: 15000 });
+          const directIp = await page.evaluate(() => document.body.innerText);
+          console.log(`[Scraper] Direct IP: ${directIp.trim()}`);
+        } catch { /* non-critical */ }
       }
     }
     
     console.log(`[Scraper] Human navigation: Landing on home page...`);
     // Étape 1 : Aller sur la Home comme un humain
-    await page.goto("https://www.linkedin.com/", { waitUntil: "networkidle2" });
+    await page.goto("https://www.linkedin.com/", { waitUntil: "networkidle2", timeout: 30000 });
     await new Promise(r => setTimeout(r, 3000 + Math.random() * 2000));
 
     console.log(`[Scraper] Navigating to login...`);
     // Étape 2 : Aller sur la page de login via le lien
-    await page.goto("https://www.linkedin.com/login", { waitUntil: "networkidle2" });
+    await page.goto("https://www.linkedin.com/login", { waitUntil: "networkidle2", timeout: 30000 });
 
     const userSelector = "#username, input[name='session_key']";
     const passSelector = "#password, input[name='session_password']";
