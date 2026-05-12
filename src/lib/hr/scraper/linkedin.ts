@@ -153,11 +153,12 @@ export async function scrapeLinkedInProfile(
   }
 
   let browser = null;
+  let scrapeAnonProxy: string | null = null;
   try {
     const puppeteer = (await import("puppeteer")) as any;
     const chromePath = await getChromePath();
     console.log(`[Scraper] Launching browser for: ${targetUrl} (chrome: ${chromePath ?? "auto"})`);
-    
+
     const launchOptions: any = {
       headless: true,
       executablePath: chromePath,
@@ -171,19 +172,19 @@ export async function scrapeLinkedInProfile(
       ],
     };
 
-    if (proxyConfig && proxyConfig.server) {
-      launchOptions.args.push(`--proxy-server=${proxyConfig.server}`);
+    if (proxyConfig?.server && proxyConfig?.username && proxyConfig?.password) {
+      const proxyChain = (await import("proxy-chain")) as any;
+      const rawServer = String(proxyConfig.server).replace(/^https?:\/\//, "");
+      const upstream = `http://${proxyConfig.username}:${proxyConfig.password}@${rawServer}`;
+      try {
+        scrapeAnonProxy = await proxyChain.anonymizeProxy(upstream);
+        launchOptions.args.push(`--proxy-server=${scrapeAnonProxy}`);
+      } catch { /* fallback to direct */ }
     }
 
     browser = await puppeteer.launch(launchOptions);
     const page = await browser.newPage();
-    
-    if (proxyConfig && proxyConfig.username && proxyConfig.password) {
-      await page.authenticate({
-        username: proxyConfig.username,
-        password: proxyConfig.password,
-      });
-    }
+    // No page.authenticate() needed — proxy-chain handles auth
 
     // Stealth masks
     await page.evaluateOnNewDocument(() => {
@@ -319,8 +320,10 @@ export async function scrapeLinkedInProfile(
     console.error("[Scraper] Puppeteer execution failed:", error);
     return null;
   } finally {
-    if (browser) {
-      await browser.close();
+    if (browser) await browser.close();
+    if (scrapeAnonProxy) {
+      const proxyChain = (await import("proxy-chain")) as any;
+      await proxyChain.closeAnonymizedProxy(scrapeAnonProxy, true).catch(() => {});
     }
   }
 }
@@ -496,13 +499,16 @@ export async function runLinkedInLoginFlow(accountId: string) {
     ];
 
     if (proxy?.server && proxy?.username && proxy?.password) {
-      const upstream = `http://${proxy.username}:${proxy.password}@${proxy.server}`;
+      // Normalize server — strip any http:// prefix (old accounts may have it stored)
+      const rawServer = String(proxy.server).replace(/^https?:\/\//, "");
+      const upstream = `http://${proxy.username}:${proxy.password}@${rawServer}`;
+      console.log(`[Scraper] proxy-chain upstream: http://${proxy.username}:***@${rawServer}`);
       try {
         anonProxyUrl = await proxyChain.anonymizeProxy(upstream);
         launchArgs.push(`--proxy-server=${anonProxyUrl}`);
-        console.log(`[Scraper] proxy-chain tunnel: ${anonProxyUrl}`);
+        console.log(`[Scraper] proxy-chain local tunnel: ${anonProxyUrl}`);
       } catch (e: any) {
-        console.warn(`[Scraper] proxy-chain failed, falling back to direct: ${e.message}`);
+        console.warn(`[Scraper] proxy-chain FAILED: ${e.message}`);
         anonProxyUrl = null;
       }
     }
@@ -616,6 +622,10 @@ export async function runLinkedInLoginFlow(accountId: string) {
 
     if (is2FA) {
       console.log("[Scraper] 2FA detected. Extracting challenge info...");
+
+      // Debug: dump full page text to understand what LinkedIn shows
+      const pageTextDump = await page.evaluate(() => document.body.innerText.substring(0, 800));
+      console.log(`[Scraper] 2FA page text:\n---\n${pageTextDump}\n---`);
 
       const { challengeType, challengeHint } = await page.evaluate(() => {
         const text = document.body.innerText.toLowerCase();
