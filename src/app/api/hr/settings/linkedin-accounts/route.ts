@@ -37,10 +37,11 @@ export async function POST(request: Request) {
     const email = pickString(body.email);
     const password = pickString(body.password);
     
-    // Use user-selected proxy settings or fallback to company profile
-    const selectedCountry = pickString(body.proxyCountry) || pickString(company?.country) || "fr";
+    // Map proxy to company location
+    const selectedCountry = pickString(company?.country) || "fr";
     const countryCodeUpper = selectedCountry.toUpperCase();
-    const preferredCity = pickString(body.proxyCity) || pickString(company?.city);
+    const preferredCity = pickString(company?.city);
+
 
     
     let finalProxyConfig = {};

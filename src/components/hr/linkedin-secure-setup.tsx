@@ -23,9 +23,8 @@ import { cn } from "@/lib/utils";
 const setupSchema = z.object({
   email: z.string().email("Email invalide"),
   password: z.string().min(6, "Mot de passe trop court"),
-  proxyCountry: z.string(),
-  proxyCity: z.string().optional(),
 });
+
 
 
 
@@ -45,9 +44,8 @@ export function LinkedinSecureSetup() {
     defaultValues: {
       email: "",
       password: "",
-      proxyCountry: "fr",
-      proxyCity: "",
     },
+
 
   });
 
@@ -136,9 +134,8 @@ export function LinkedinSecureSetup() {
         body: JSON.stringify({
           email: values.email,
           password: values.password,
-          proxyCountry: values.proxyCountry,
-          proxyCity: values.proxyCity,
         }),
+
 
       });
 
@@ -218,46 +215,8 @@ export function LinkedinSecureSetup() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 pt-2">
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold uppercase tracking-wider text-foreground/40 px-1">Pays de connexion</label>
-                    <select
-                      {...form.register("proxyCountry")}
-                      className="flex h-11 w-full items-center justify-between rounded-md border border-input bg-secondary/5 px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <option value="fr">France</option>
-                      <option value="be">Belgique</option>
-                      <option value="ch">Suisse</option>
-                      <option value="ca">Canada</option>
-                      <option value="us">États-Unis</option>
-                      <option value="gb">Royaume-Uni</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold uppercase tracking-wider text-foreground/40 px-1">Ville (Optionnel)</label>
-                    <select
-                      {...form.register("proxyCity")}
-                      className="flex h-11 w-full items-center justify-between rounded-md border border-input bg-secondary/5 px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <option value="">Automatique</option>
-                      <option value="paris">Paris</option>
-                      <option value="lyon">Lyon</option>
-                      <option value="marseille">Marseille</option>
-                      <option value="toulouse">Toulouse</option>
-                      <option value="bordeaux">Bordeaux</option>
-                      <option value="lille">Lille</option>
-                      <option value="nantes">Nantes</option>
-                      <option value="strasbourg">Strasbourg</option>
-                      <option value="montpellier">Montpellier</option>
-                      <option value="rennes">Rennes</option>
-                      <option value="nice">Nice</option>
-                    </select>
-                  </div>
-                </div>
-
-
                 <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-4 flex gap-3">
+
                   <ShieldCheck className="size-5 text-emerald-600 shrink-0 mt-0.5" />
                   <div>
                     <p className="text-[12px] font-bold text-emerald-800">Sécurisé par Verytis</p>
