@@ -36,7 +36,12 @@ export async function POST(request: Request) {
     
     const email = pickString(body.email);
     const password = pickString(body.password);
-    const preferredCity = pickString(company?.city);
+    
+    // Use user-selected proxy settings or fallback to company profile
+    const selectedCountry = pickString(body.proxyCountry) || pickString(company?.country) || "fr";
+    const selectedCity = pickString(body.proxyCity);
+    const preferredCity = selectedCity || pickString(company?.city);
+    
     let finalProxyConfig = {};
     const proxyApiUrl = process.env.SMARTPROXY_API_URL;
     const proxyHost = process.env.MANAGED_PROXY_HOST;
@@ -44,13 +49,14 @@ export async function POST(request: Request) {
     const proxyUser = process.env.MANAGED_PROXY_USER;
     const proxyPass = process.env.MANAGED_PROXY_PASS;
 
+
     if (proxyApiUrl) {
       // API extraction mode — fetch a fresh proxy IP at runtime (bypasses port restrictions)
       finalProxyConfig = { api_url: proxyApiUrl, is_managed: true };
     } else if (proxyHost && proxyUser && proxyPass) {
       // Fallback: static user:pass proxy
-      const countryCode = (pickString(company?.country) || "FR").toLowerCase();
-      const cityCode = pickString(company?.city)?.toLowerCase().replace(/[^a-z0-9]/g, ''); // sanitize city for proxy
+      const countryCode = selectedCountry.toLowerCase();
+      const cityCode = selectedCity ? selectedCity.toLowerCase().replace(/[^a-z0-9]/g, '') : null;
 
       let managedUsername = proxyUser;
       // Decodo (new Smartproxy) uses -country- and -city- format
@@ -60,6 +66,7 @@ export async function POST(request: Request) {
           managedUsername = `${managedUsername}-city-${cityCode}`;
         }
       }
+
       finalProxyConfig = {
         server: `${proxyHost}:${proxyPort || '3121'}`,
         username: managedUsername,
