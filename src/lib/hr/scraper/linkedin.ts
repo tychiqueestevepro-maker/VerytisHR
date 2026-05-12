@@ -546,14 +546,45 @@ export async function runLinkedInLoginFlow(accountId: string) {
         ? `http://${resolvedProxy.username}:${resolvedProxy.password}@${resolvedProxy.server}`
         : `http://${resolvedProxy.server}`;
       console.log(`[Scraper] proxy-chain upstream: ${upstream.replace(/:([^:@]+)@/, ':***@')}`);
-      try {
-        anonProxyUrl = await proxyChain.anonymizeProxy(upstream);
-        launchArgs.push(`--proxy-server=${anonProxyUrl}`);
-        console.log(`[Scraper] proxy-chain local tunnel: ${anonProxyUrl}`);
-      } catch (e: any) {
-        console.warn(`[Scraper] proxy-chain FAILED: ${e.message}`);
-        anonProxyUrl = null;
-      }
+      anonProxyUrl = await proxyChain.anonymizeProxy(upstream);
+      launchArgs.push(`--proxy-server=${anonProxyUrl}`);
+      console.log(`[Scraper] proxy-chain local tunnel: ${anonProxyUrl}`);
+    } else if (proxy && (proxy.server || proxy.api_url)) {
+      throw new Error("Proxy configuré mais aucune IP résolue — vérifiez les credentials Smartproxy.");
+    }
+
+    // Pre-flight: test Node.js HTTP CONNECT to proxy before launching Chrome
+    if (resolvedProxy) {
+      const { server, username, password } = resolvedProxy;
+      const [proxyHost, proxyPortStr] = server.split(":");
+      const proxyPort = parseInt(proxyPortStr || "3120", 10);
+      await new Promise<void>((resolve, reject) => {
+        const http = require("http");
+        const req = http.request({
+          host: proxyHost,
+          port: proxyPort,
+          method: "CONNECT",
+          path: "api.ip.cc:443",
+          headers: {
+            "Proxy-Authorization": `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`,
+          },
+          timeout: 10000,
+        });
+        req.on("connect", (_res: any) => {
+          console.log(`[Scraper] ✅ Node.js CONNECT to proxy OK (${server})`);
+          req.socket?.destroy();
+          resolve();
+        });
+        req.on("error", (e: Error) => {
+          console.error(`[Scraper] ❌ Node.js CONNECT to proxy FAILED: ${e.message}`);
+          reject(new Error(`Proxy inaccessible depuis Railway: ${e.message}`));
+        });
+        req.on("timeout", () => {
+          req.destroy();
+          reject(new Error(`Proxy timeout (10s) depuis Railway — port ${proxyPort} bloqué ?`));
+        });
+        req.end();
+      });
     }
 
     browser = await puppeteer.launch({ headless: true, executablePath: chromePath, args: launchArgs });
