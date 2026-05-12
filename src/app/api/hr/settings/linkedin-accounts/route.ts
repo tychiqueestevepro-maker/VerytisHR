@@ -55,17 +55,7 @@ export async function POST(request: Request) {
       finalProxyConfig = { api_url: proxyApiUrl, is_managed: true };
     } else if (proxyHost && proxyUser && proxyPass) {
       // Fallback: static user:pass proxy
-      const countryCode = selectedCountry.toLowerCase();
-      const cityCode = selectedCity ? selectedCity.toLowerCase().replace(/[^a-z0-9]/g, '') : null;
-
       let managedUsername = proxyUser;
-      // Decodo (new Smartproxy) uses -country- and -city- format
-      if (!managedUsername.includes("-country-") && !managedUsername.includes("-area-")) {
-        managedUsername = `${managedUsername}-country-${countryCode}`;
-        if (cityCode) {
-          managedUsername = `${managedUsername}-city-${cityCode}`;
-        }
-      }
 
       finalProxyConfig = {
         server: `${proxyHost}:${proxyPort || '3121'}`,
@@ -73,6 +63,7 @@ export async function POST(request: Request) {
         password: proxyPass,
         is_managed: true,
       };
+
     }
 
 
