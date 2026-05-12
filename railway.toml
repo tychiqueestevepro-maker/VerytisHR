@@ -3,4 +3,4 @@ installCommand = "npm install --legacy-peer-deps"
 buildCommand = "npm run build"
 
 [deploy]
-startCommand = "next start -H 0.0.0.0 -p ${PORT:-3000}"
+startCommand = "HOSTNAME=0.0.0.0 PORT=${PORT:-3000} node .next/standalone/server.js"
