@@ -33,6 +33,8 @@ export function LinkedinSecureSetup() {
   const [challengeId, setChallengeId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [twoFactorCode, setTwoFactorCode] = useState("");
+  const [challengeHint, setChallengeHint] = useState<string | null>(null);
+  const [challengeType, setChallengeType] = useState<"email_code" | "sms_code" | null>(null);
 
   const form = useForm<SetupFormValues>({
     resolver: zodResolver(setupSchema),
@@ -41,6 +43,25 @@ export function LinkedinSecureSetup() {
       password: "",
     },
   });
+
+  // Fetch challenge hint when 2FA step is reached
+  useEffect(() => {
+    if (step !== "2fa" || !accountId) return;
+    let cancelled = false;
+    const poll = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/hr/settings/linkedin-accounts/${accountId}/challenge`);
+        const { challenge } = await res.json();
+        if (cancelled) return;
+        if (challenge?.challenge_hint) {
+          setChallengeHint(challenge.challenge_hint);
+          clearInterval(poll);
+        }
+        if (challenge?.challenge_type) setChallengeType(challenge.challenge_type);
+      } catch { /* ignore */ }
+    }, 2000);
+    return () => { cancelled = true; clearInterval(poll); };
+  }, [step, accountId]);
 
   // Polling for account status
   useEffect(() => {
@@ -237,9 +258,16 @@ export function LinkedinSecureSetup() {
 
               <div className="bg-amber-50 rounded-xl p-4 border border-amber-100 flex gap-3">
                 <Mail className="size-5 text-amber-600 shrink-0 mt-0.5" />
-                <p className="text-sm text-amber-700 leading-6">
-                  Vérifiez vos emails ou SMS pour récupérer le code à 6 chiffres envoyé par LinkedIn.
-                </p>
+                <div className="text-sm text-amber-700 leading-6">
+                  {challengeHint ? (
+                    <>
+                      Code envoyé{challengeType === "sms_code" ? " par SMS" : " par email"} à{" "}
+                      <span className="font-mono font-semibold">{challengeHint}</span>
+                    </>
+                  ) : (
+                    <>Vérifiez vos {challengeType === "sms_code" ? "SMS" : "emails"} pour le code LinkedIn.</>
+                  )}
+                </div>
               </div>
 
               <div className="space-y-4">

@@ -617,28 +617,52 @@ export async function runLinkedInLoginFlow(accountId: string) {
 
     // Check for 2FA
     const is2FA = await page.evaluate(() => {
-      return !!(document.querySelector('input[name="pin"]') || 
-                document.querySelector('#email-pin') || 
-                document.querySelector('#input__email_verification_pin') ||
-                document.location.href.includes("checkpoint/challenge"));
+      return !!(
+        document.querySelector('input[name="pin"]') ||
+        document.querySelector('#input__email_verification_pin') ||
+        document.querySelector('#input__phone_verification_pin') ||
+        document.querySelector('#email-pin') ||
+        document.querySelector('input[autocomplete="one-time-code"]') ||
+        document.location.href.includes("checkpoint/challenge") ||
+        document.location.href.includes("checkpoint/lg/login-submit")
+      );
     });
 
     if (is2FA) {
-      console.log("[Scraper] 2FA detected. Creating challenge record...");
-      
-      const challengeType = await page.evaluate(() => {
+      console.log("[Scraper] 2FA detected. Extracting challenge info...");
+
+      const { challengeType, challengeHint } = await page.evaluate(() => {
         const text = document.body.innerText.toLowerCase();
-        if (text.includes("email") || text.includes("e-mail")) return "email_code";
-        if (text.includes("sms") || text.includes("téléphone")) return "sms_code";
-        return "captcha";
+        const url = document.location.href;
+
+        let type: string;
+        if (url.includes("phone") || text.includes("sms") || text.includes("téléphone") || text.includes("phone")) {
+          type = "sms_code";
+        } else {
+          type = "email_code";
+        }
+
+        // Extract masked email or phone hint
+        let hint: string | null = null;
+        const emailMatch = document.body.innerText.match(/[a-zA-Z*]+@[a-zA-Z*.]+\.[a-zA-Z*]+/);
+        if (emailMatch) {
+          hint = emailMatch[0];
+        } else {
+          const phoneMatch = document.body.innerText.match(/[*•x\d]{2,}[\s]?\d{2,4}/i);
+          if (phoneMatch) hint = phoneMatch[0].trim();
+        }
+
+        return { challengeType: type, challengeHint: hint };
       });
 
-      // Create challenge in DB
+      console.log(`[Scraper] Challenge type: ${challengeType}, hint: ${challengeHint ?? "none"}`);
+
       const { data: challenge, error: challengeError } = await supabase
         .from("linkedin_challenges")
         .insert({
           account_id: accountId,
           challenge_type: challengeType,
+          challenge_hint: challengeHint,
           challenge_status: "pending"
         })
         .select()
@@ -646,10 +670,8 @@ export async function runLinkedInLoginFlow(accountId: string) {
 
       if (challengeError) throw challengeError;
 
-      // Update account status
       await supabase.from("linkedin_accounts").update({ status: "challenge_pending" }).eq("id", accountId);
 
-      // Wait for the code to be provided in the DB (polling for 2 minutes max)
       console.log(`[Scraper] Waiting for 2FA code for challenge ${challenge.id}...`);
       let code = null;
       const startTime = Date.now();
@@ -659,23 +681,64 @@ export async function runLinkedInLoginFlow(accountId: string) {
           .select("code, challenge_status")
           .eq("id", challenge.id)
           .single();
-        
+
         if (updatedChallenge?.code) {
           code = updatedChallenge.code;
           break;
         }
         if (updatedChallenge?.challenge_status === "expired") break;
-        
+
         await new Promise(r => setTimeout(r, 5000));
       }
 
       if (code) {
-        console.log("[Scraper] Code received. Injecting...");
-        // Handle different 2FA input structures
-        const pinInputSelector = 'input[name="pin"], #email-pin, #input__email_verification_pin';
-        await page.type(pinInputSelector, code, { delay: 100 });
-        await page.click('button[type="submit"], #email-pin-submit-button');
-        await page.waitForNavigation({ waitUntil: "networkidle2" });
+        console.log("[Scraper] Code received. Finding input...");
+
+        // Try each selector individually — page.type() doesn't support comma-separated selectors
+        const pinSelectors = [
+          'input[name="pin"]',
+          '#input__email_verification_pin',
+          '#input__phone_verification_pin',
+          '#email-pin',
+          'input[autocomplete="one-time-code"]',
+          'input[type="text"]',
+          'input[type="number"]',
+          'input[type="tel"]',
+        ];
+
+        let pinSelector: string | null = null;
+        for (const sel of pinSelectors) {
+          try {
+            await page.waitForSelector(sel, { timeout: 2000 });
+            pinSelector = sel;
+            break;
+          } catch { /* try next */ }
+        }
+
+        if (!pinSelector) {
+          const pageHtml = await page.evaluate(() => document.body.innerHTML.substring(0, 1500));
+          throw new Error(`Aucun champ PIN trouvé. HTML: ${pageHtml}`);
+        }
+
+        await page.click(pinSelector);
+        await page.type(pinSelector, code, { delay: 100 });
+
+        const submitSelectors = [
+          '#email-pin-submit-button',
+          '#two-step-submit-button',
+          'button[type="submit"]',
+          'button[data-id="submit"]',
+        ];
+
+        for (const sel of submitSelectors) {
+          try {
+            await page.waitForSelector(sel, { timeout: 1000 });
+            await page.click(sel);
+            break;
+          } catch { /* try next */ }
+        }
+
+        await page.waitForNavigation({ waitUntil: "networkidle2" }).catch(() => {});
       } else {
         await supabase.from("linkedin_challenges").update({ challenge_status: "expired" }).eq("id", challenge.id);
         throw new Error("2FA timeout");

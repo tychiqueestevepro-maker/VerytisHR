@@ -2,6 +2,29 @@ import { NextResponse } from "next/server";
 import { getHrContext, statusFromError, messageFromError } from "@/lib/hr/auth";
 import { pickString } from "@/lib/hr/utils";
 
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id: accountId } = await params;
+    const { supabase } = await getHrContext({ recruiter: true });
+
+    const { data: challenge } = await supabase
+      .from("linkedin_challenges")
+      .select("id, challenge_type, challenge_hint, challenge_status")
+      .eq("account_id", accountId)
+      .eq("challenge_status", "pending")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    return NextResponse.json({ challenge });
+  } catch (error) {
+    return NextResponse.json({ error: messageFromError(error) }, { status: statusFromError(error) });
+  }
+}
+
 export async function POST(
   request: Request, 
   { params }: { params: Promise<{ id: string }> }
