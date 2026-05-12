@@ -773,7 +773,14 @@ export async function runLinkedInLoginFlow(accountId: string) {
         console.log("[Scraper] Push notification challenge. Waiting up to 3min for app confirmation...");
         let confirmed = false;
         try {
-          await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 180000 });
+          // LinkedIn might not trigger a full navigation, or networkidle2 might never be reached due to background polling.
+          // Wait for the URL to change to /feed/ or /checkpoint/post-login, or for a feed element to appear.
+          await Promise.race([
+            page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 180000 }),
+            page.waitForSelector('.scaffold-layout', { timeout: 180000 }),
+            page.waitForFunction(() => window.location.href.includes('feed') || window.location.href.includes('post-login'), { timeout: 180000 })
+          ]);
+
           confirmed = true;
           console.log("[Scraper] App push confirmed — page navigated to:", page.url());
         } catch {
