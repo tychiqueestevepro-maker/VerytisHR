@@ -22,10 +22,17 @@ async function fetchProxyFromApiUrl(apiUrl: string): Promise<{ server: string; u
     if (!line) return null;
     const parts = line.split(":");
     // host:port:user:pass
-    if (parts.length === 4) return { server: `${parts[0]}:${parts[1]}`, username: parts[2], password: parts[3] };
+    if (parts.length === 4) {
+      return { 
+        server: `${parts[0].trim()}:${parts[1].trim()}`, 
+        username: parts[2].replace(/\s+/g, ''), 
+        password: parts[3].replace(/\s+/g, '') 
+      };
+    }
     // host:port
-    if (parts.length >= 2) return { server: `${parts[0]}:${parts[1]}` };
+    if (parts.length >= 2) return { server: `${parts[0].trim()}:${parts[1].trim()}` };
     return null;
+
   } catch (e: any) {
     console.warn(`[Scraper] fetchProxyFromApiUrl failed: ${e.message}`);
     return null;
@@ -537,8 +544,12 @@ export async function runLinkedInLoginFlow(accountId: string) {
       resolvedProxy = await fetchProxyFromApiUrl(proxy.api_url);
       console.log(`[Scraper] Proxy from API: ${resolvedProxy?.server ?? "none"}`);
     } else if (proxy?.server) {
-      const rawServer = String(proxy.server).replace(/^https?:\/\//, "");
-      resolvedProxy = { server: rawServer, username: proxy.username, password: proxy.password };
+      const rawServer = String(proxy.server).replace(/^https?:\/\//, "").replace(/\s+/g, "");
+      resolvedProxy = { 
+        server: rawServer, 
+        username: proxy.username ? String(proxy.username).replace(/\s+/g, "") : undefined, 
+        password: proxy.password ? String(proxy.password).replace(/\s+/g, "") : undefined 
+      };
     }
 
     if (resolvedProxy) {
