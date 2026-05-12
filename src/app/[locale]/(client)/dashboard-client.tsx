@@ -223,7 +223,7 @@ export function DashboardClient({ applications = [] }: DashboardClientProps) {
                     </div>
                     <div className="flex items-center gap-2 px-4 py-2 bg-secondary/50 rounded-xl border border-border/50 text-xs text-foreground/40 font-medium">
                       <Brain size={12} className="animate-pulse" />
-                      Réflexion en cours...
+                      {t("thinking")}
                     </div>
                   </div>
                 </motion.div>

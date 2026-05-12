@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist_Mono, Inter } from "next/font/google";
 import { AppProviders } from "@/components/providers";
+import { CookieBanner } from "@/components/landing/cookie-banner";
 import "../globals.css";
 import {NextIntlClientProvider} from 'next-intl';
 import {getMessages} from 'next-intl/server';
@@ -44,6 +45,7 @@ export default async function RootLayout({
       <body className="min-h-full bg-black text-white">
         <NextIntlClientProvider messages={messages}>
           <AppProviders>{children}</AppProviders>
+          <CookieBanner />
         </NextIntlClientProvider>
       </body>
     </html>

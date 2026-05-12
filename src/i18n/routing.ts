@@ -3,8 +3,8 @@ import {createNavigation} from 'next-intl/navigation';
 
 export const routing = defineRouting({
   locales: ['en', 'fr'],
-  defaultLocale: 'fr',
-  localePrefix: 'as-needed' // Only add prefix for non-default locale if preferred, but usually 'always' is better for explicitness. Let's use 'as-needed' so / remains french.
+  defaultLocale: 'en',
+  localePrefix: 'as-needed',
 });
 
 // Lightweight wrappers around Next.js' navigation APIs

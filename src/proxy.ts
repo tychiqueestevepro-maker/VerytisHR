@@ -48,7 +48,14 @@ export async function proxy(request: NextRequest) {
 
   // Routes publiques
   const isPublic =
+    pathWithoutLocale === "/" ||
     pathWithoutLocale === "/login" ||
+    pathWithoutLocale === "/signup" ||
+    pathWithoutLocale === "/beta-request" ||
+    pathWithoutLocale === "/privacy" ||
+    pathWithoutLocale === "/terms" ||
+    pathWithoutLocale === "/mentions-legales" ||
+    pathWithoutLocale.endsWith(".mp4") ||
     pathWithoutLocale.startsWith("/api/") ||
     pathWithoutLocale.startsWith("/apply/") ||
     pathWithoutLocale.startsWith("/jobs/") ||
@@ -71,6 +78,6 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|mp4)$).*)",
   ],
 };

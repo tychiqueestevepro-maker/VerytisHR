@@ -4,10 +4,10 @@ import { pickString } from "@/lib/hr/utils";
 
 export async function POST(
   request: Request, 
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id: accountId } = params;
+    const { id: accountId } = await params;
     const { supabase } = await getHrContext({ recruiter: true });
     const body = await request.json();
     const code = pickString(body.code);

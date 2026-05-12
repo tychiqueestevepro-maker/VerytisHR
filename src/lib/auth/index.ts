@@ -17,14 +17,43 @@ export async function login(formData: FormData) {
   }
 
   revalidatePath("/", "layout");
-  nextRedirect("/");
+  nextRedirect("/dashboard");
+}
+
+export async function signup(formData: FormData) {
+  const supabase = await createSupabaseServerClient();
+
+  const email = formData.get("email") as string;
+  const password = formData.get("password") as string;
+  const confirmPassword = formData.get("confirmPassword") as string;
+  const firstName = formData.get("firstName") as string;
+  const lastName = formData.get("lastName") as string;
+
+  if (password !== confirmPassword) {
+    nextRedirect("/signup?error=" + encodeURIComponent("Les mots de passe ne correspondent pas."));
+  }
+
+  const { error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: { first_name: firstName, last_name: lastName },
+    },
+  });
+
+  if (error) {
+    nextRedirect("/signup?error=" + encodeURIComponent(error.message));
+  }
+
+  revalidatePath("/", "layout");
+  nextRedirect("/dashboard");
 }
 
 export async function logout() {
   const supabase = await createSupabaseServerClient();
   await supabase.auth.signOut();
   revalidatePath("/", "layout");
-  nextRedirect("/login");
+  nextRedirect("/");
 }
 
 export async function getSession() {

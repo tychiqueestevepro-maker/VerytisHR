@@ -152,11 +152,11 @@ export function AppShell({
         <div className="flex flex-col h-full px-3 py-4 overflow-hidden">
           <div className={cn("mb-6 flex items-center px-1", collapsed ? "flex-col gap-6" : "justify-between")}>
             <img 
-              src="/logo.png" 
+              src="/verytisLogo.svg" 
               alt="Verytis" 
               className={cn(
-                "h-14 w-auto object-contain grayscale contrast-125 opacity-70 transition-all duration-300 hover:opacity-100", 
-                collapsed ? "h-9" : "h-14"
+                "h-7 w-auto object-contain transition-all duration-300", 
+                collapsed ? "h-6 mx-auto" : "h-7"
               )} 
             />
             {collapsed ? (
@@ -188,13 +188,13 @@ export function AppShell({
           <nav className="space-y-1">
             {/* Home */}
             <Link
-              href="/"
+              href="/dashboard"
               className={cn(
                 "group flex h-9 items-center gap-2.5 rounded-[6px] px-2.5 text-[13px] text-foreground/50 transition duration-200 hover:bg-secondary hover:text-foreground",
-                pathname === "/" && "bg-pink-50 text-pink-600 font-bold"
+                pathname === "/dashboard" && "bg-pink-50 text-pink-600 font-bold"
               )}
             >
-              <DashboardIcon className={cn("size-[18px] shrink-0", pathname === "/" ? "text-pink-600" : "")} />
+              <DashboardIcon className={cn("size-[18px] shrink-0", pathname === "/dashboard" ? "text-pink-600" : "")} />
               {!collapsed && <span className="truncate">{tNav("home")}</span>}
             </Link>
 
@@ -363,7 +363,7 @@ export function AppShell({
 
         <div className={cn(
           "w-full h-full relative z-10",
-          pathname !== "/" && "px-4 md:px-8 py-6"
+          !["/", "/dashboard", "/hr/chat"].some(p => pathname === p || pathname.startsWith(p)) && "px-4 md:px-8 py-6"
         )}>
           {children}
         </div>
