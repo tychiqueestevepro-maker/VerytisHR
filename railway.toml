@@ -4,7 +4,3 @@ buildCommand = "npm run build && mkdir -p .next/standalone/.next/static && cp -r
 
 [deploy]
 startCommand = "HOSTNAME=0.0.0.0 PORT=${PORT:-3000} node .next/standalone/server.js"
-
-[variables]
-PUPPETEER_EXECUTABLE_PATH = "/usr/bin/google-chrome-stable"
-PUPPETEER_SKIP_CHROMIUM_DOWNLOAD = "false"

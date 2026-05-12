@@ -4,20 +4,54 @@ import { createSupabaseServiceClient } from "../../supabase/server";
 
 /**
  * Résout le chemin exécutable de Chrome selon l'environnement.
- * - Variable d'env PUPPETEER_EXECUTABLE_PATH (Railway/Docker)
- * - Sinon : chemin bundlé par Puppeteer lui-même (local)
+ * 1. Variable d'env PUPPETEER_EXECUTABLE_PATH (si elle existe réellement)
+ * 2. Chemin bundlé par Puppeteer via executablePath()
+ * 3. Chemins Linux courants en fallback
  */
 async function getChromePath(): Promise<string | undefined> {
-  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-    return process.env.PUPPETEER_EXECUTABLE_PATH;
+  const { existsSync } = await import("fs");
+
+  // 1. Variable d'env — mais vérifier que le binaire existe réellement
+  const envPath = process.env.PUPPETEER_EXECUTABLE_PATH;
+  if (envPath && existsSync(envPath)) {
+    console.log(`[Chrome] Using env PUPPETEER_EXECUTABLE_PATH: ${envPath}`);
+    return envPath;
   }
+  if (envPath) {
+    console.warn(`[Chrome] PUPPETEER_EXECUTABLE_PATH=${envPath} set but binary NOT found, skipping`);
+  }
+
+  // 2. Chemin résolu par Puppeteer lui-même (cache local)
   try {
     const { executablePath } = (await import("puppeteer")) as any;
     const resolved = typeof executablePath === "function" ? executablePath() : executablePath;
-    return resolved || undefined;
-  } catch {
-    return undefined;
+    if (resolved && existsSync(resolved)) {
+      console.log(`[Chrome] Using puppeteer executablePath: ${resolved}`);
+      return resolved;
+    }
+    if (resolved) {
+      console.warn(`[Chrome] puppeteer executablePath=${resolved} but binary NOT found`);
+    }
+  } catch (e) {
+    console.warn(`[Chrome] Failed to resolve puppeteer executablePath:`, e);
   }
+
+  // 3. Fallback Linux paths
+  const fallbacks = [
+    "/usr/bin/google-chrome-stable",
+    "/usr/bin/google-chrome",
+    "/usr/bin/chromium-browser",
+    "/usr/bin/chromium",
+  ];
+  for (const p of fallbacks) {
+    if (existsSync(p)) {
+      console.log(`[Chrome] Using fallback path: ${p}`);
+      return p;
+    }
+  }
+
+  console.warn(`[Chrome] No Chrome binary found anywhere — puppeteer.launch() will use its own default`);
+  return undefined;
 }
 
 /**
