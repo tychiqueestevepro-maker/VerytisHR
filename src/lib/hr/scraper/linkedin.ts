@@ -558,27 +558,34 @@ export async function runLinkedInLoginFlow(accountId: string) {
       const { server, username, password } = resolvedProxy;
       const [proxyHost, proxyPortStr] = server.split(":");
       const proxyPort = parseInt(proxyPortStr || "3120", 10);
-      await new Promise<void>((resolve) => {
+      await new Promise<void>((resolve, reject) => {
         const net = require("net");
         const socket: any = net.createConnection({ host: proxyHost, port: proxyPort, timeout: 10000 });
         socket.on("connect", () => {
           const auth = Buffer.from(`${username}:${password}`).toString("base64");
-          socket.write(`CONNECT api.ip.cc:443 HTTP/1.1\r\nHost: api.ip.cc:443\r\nProxy-Authorization: Basic ${auth}\r\nProxy-Connection: keep-alive\r\n\r\n`);
+          // Test with a simple HTTP HEAD to a stable site
+          socket.write(`CONNECT httpbin.org:80 HTTP/1.1\r\nHost: httpbin.org:80\r\nProxy-Authorization: Basic ${auth}\r\nProxy-Connection: keep-alive\r\n\r\n`);
         });
         socket.on("data", (data: Buffer) => {
           const resp = data.toString().substring(0, 200);
           console.log(`[Scraper] Raw proxy response: ${JSON.stringify(resp)}`);
-          socket.destroy();
-          resolve(); // don't block — just log
+          if (resp.includes("200 OK") || resp.includes("200 Connection established")) {
+            console.log(`[Scraper] ✅ Raw TCP to proxy OK`);
+            socket.destroy();
+            resolve();
+          } else {
+            socket.destroy();
+            reject(new Error(`Proxy a refusé la connexion: ${resp}`));
+          }
         });
         socket.on("error", (e: Error) => {
-          console.error(`[Scraper] Raw TCP to proxy FAILED: ${e.message}`);
-          resolve(); // don't block on pre-flight error
+          console.error(`[Scraper] ❌ Raw TCP to proxy FAILED: ${e.message}`);
+          reject(new Error(`Proxy inaccessible (TCP): ${e.message}`));
         });
         socket.on("timeout", () => {
           console.error(`[Scraper] Raw TCP to proxy TIMEOUT`);
           socket.destroy();
-          resolve();
+          reject(new Error(`Proxy timeout (10s) — port ${proxyPort} bloqué ou IP morte ?`));
         });
       });
     }
@@ -619,7 +626,8 @@ export async function runLinkedInLoginFlow(accountId: string) {
     if (anonProxyUrl) {
       console.log(`[Scraper] Testing proxy tunnel via proxy-chain...`);
       try {
-        await page.goto("https://api.ip.cc", { waitUntil: "networkidle2", timeout: 20000 });
+        // Use HTTP instead of HTTPS to avoid SSL tunnel overhead/issues for IP check
+        await page.goto("http://ifconfig.me/ip", { waitUntil: "networkidle2", timeout: 20000 });
         const ip = await page.evaluate(() => document.body.innerText.trim());
         console.log(`[Scraper] ✅ Proxy OK — IP: ${ip}`);
         await supabase.from("linkedin_accounts").update({ last_detected_ip: ip }).eq("id", accountId);
