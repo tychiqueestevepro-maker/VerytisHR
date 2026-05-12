@@ -228,17 +228,45 @@ export async function scrapeLinkedInProfile(
 
 
 
-    // Stealth masks
+    // --- Advanced Anti-Detect Fingerprinting ---
     await page.evaluateOnNewDocument(() => {
-      Object.defineProperty(navigator, "webdriver", { get: () => false });
-      (navigator as any).chrome = { runtime: {} };
-      (navigator as any).permissions.query = (parameters: any) =>
-        parameters.name === "notifications"
-          ? Promise.resolve({ state: "denied" })
-          : (navigator as any).permissions.query(parameters);
+      // 1. Hide Webdriver
+      Object.defineProperty(navigator, 'webdriver', { get: () => false });
+
+      // 2. Mock Chrome runtime
+      (window as any).chrome = {
+        runtime: {},
+        loadTimes: function() {},
+        csi: function() {},
+        app: {}
+      };
+
+      // 3. Mock hardware signals
+      Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
+      Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
+      Object.defineProperty(navigator, 'maxTouchPoints', { get: () => 1 });
+
+      // 4. Mock Plugins (LinkedIn looks for these)
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => [
+          { name: 'Chrome PDF Viewer', filename: 'internal-pdf-viewer' },
+          { name: 'Google Docs Offline', filename: 'mhjfbmdcljmapbaitedoijbeohimnoih' }
+        ]
+      });
+
+      // 5. Mock Permissions
+      const originalQuery = navigator.permissions.query;
+      navigator.permissions.query = (parameters) => (
+        parameters.name === 'notifications' ?
+          Promise.resolve({ state: Notification.permission } as PermissionStatus) :
+          originalQuery(parameters)
+      );
     });
 
-    await page.setUserAgent("Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1");
+    // Use a very common, high-trust Desktop User Agent
+    await page.setUserAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
+    await page.setViewport({ width: 1440, height: 900 });
+
     
     let liAtFound = false;
 
@@ -665,17 +693,31 @@ export async function runLinkedInLoginFlow(accountId: string) {
       }
     }
     
-    console.log(`[Scraper] Human navigation: Landing on home page...`);
-    // Étape 1 : Aller sur la Home comme un humain
-    await page.goto("https://www.linkedin.com/", { waitUntil: "networkidle2", timeout: 30000 });
-    await new Promise(r => setTimeout(r, 3000 + Math.random() * 2000));
+    console.log(`[Scraper] Anti-detect: Initial landing on home page...`);
+    await page.goto("https://www.linkedin.com/", { waitUntil: "domcontentloaded", timeout: 30000 });
+    
+    // --- Human Warm-up Phase ---
+    console.log(`[Scraper] 🌡️ Warming up (simulating human behavior)...`);
+    await page.evaluate(async () => {
+      const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+      // Random scrolling
+      for (let i = 0; i < 3; i++) {
+        window.scrollBy(0, Math.floor(Math.random() * 400) + 200);
+        await delay(Math.floor(Math.random() * 1500) + 500);
+      }
+      // Hover random elements
+      const links = document.querySelectorAll('a');
+      const randomLink = links[Math.floor(Math.random() * links.length)];
+      if (randomLink) (randomLink as any).scrollIntoView();
+    });
+    await new Promise(r => setTimeout(r, 2000 + Math.random() * 2000));
 
     console.log(`[Scraper] Navigating to login...`);
-    // Étape 2 : Aller sur la page de login via le lien
     await page.goto("https://www.linkedin.com/login", { waitUntil: "networkidle2", timeout: 30000 });
 
     const userSelector = "#username, #session_key, input[name='session_key'], input[type='email'], input[type='text']";
     const passSelector = "#password, #session_password, input[name='session_password'], input[type='password']";
+
     
     try {
       // Wait for either the login fields OR a security challenge indicator
