@@ -288,11 +288,11 @@ export const getSettingsWorkspaceData = cache(async () => {
       }))
     },
     user: {
-      id: pickString(currentUser?.id),
-      email: pickString(currentUser?.email),
-      firstName: pickString(currentUser?.first_name),
-      lastName: pickString(currentUser?.last_name),
-      avatarUrl: pickString(currentUser?.avatar_url),
+      id: pickString(currentUser?.id) ?? "",
+      email: pickString(currentUser?.email) ?? "",
+      firstName: pickString(currentUser?.first_name) ?? "",
+      lastName: pickString(currentUser?.last_name) ?? "",
+      avatarUrl: pickString(currentUser?.avatar_url) ?? "",
       name: [pickString(currentUser?.first_name), pickString(currentUser?.last_name)].filter(Boolean).join(" ") || pickString(currentUser?.email) || "Profile",
     },
   };

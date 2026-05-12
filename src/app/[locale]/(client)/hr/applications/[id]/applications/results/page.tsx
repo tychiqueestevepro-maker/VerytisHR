@@ -83,7 +83,7 @@ export default async function ApplicationsResultsPage({ params }: { params: Prom
 
                 <div className="relative flex items-center gap-8 shrink-0 pr-4 z-10">
                   <LinkedInLink url={application.linkedinUrl} />
-                  <CVLink url={application.cvUrl} />
+                  <CVLink url={application.cvUrl as string | null} />
 
                   <div className="flex items-center gap-6 pl-6 border-l border-black/[0.03]">
                     <div className="flex flex-col items-end justify-center min-w-[70px]">

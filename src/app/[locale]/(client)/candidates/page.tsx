@@ -70,7 +70,7 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
 
               <div className="relative flex items-center gap-10 shrink-0 pr-4 z-10">
                 <LinkedInLink url={candidate.linkedinUrl} />
-                <CVLink url={candidate.cvUrl} />
+                <CVLink url={candidate.cvUrl as string | null} />
 
                 <div className="relative flex flex-col items-end justify-center pl-6 border-l border-black/[0.03] min-w-[120px]">
                   <span className="text-[10px] text-foreground/25 font-black uppercase tracking-[0.15em] mb-1">Last seen</span>

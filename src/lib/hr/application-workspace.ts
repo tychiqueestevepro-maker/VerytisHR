@@ -887,7 +887,6 @@ export const getApplicationWorkspaceData = cache(async (applicationId: string) =
       linkedinCvCoherence: candidate?.linkedinCvCoherence ?? pickString(criteria.linkedin_cv_coherence) ?? "Pending",
       linkedinUrl: candidate?.linkedinUrl ?? pickString(session.candidate_linkedin_url),
       cvUrl: candidate?.cvUrl ?? null,
-      profileImageUrl: candidate?.profileImageUrl ?? null,
       completion,
       completionLabel: `${completedQuestions}/${totalQuestions || questions.length}`,
       integrityStatus: reviewNeeded ? "Review needed" : "Clean",
