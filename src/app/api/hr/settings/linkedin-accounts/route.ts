@@ -39,15 +39,17 @@ export async function POST(request: Request) {
     
     // Use user-selected proxy settings or fallback to company profile
     const selectedCountry = pickString(body.proxyCountry) || pickString(company?.country) || "fr";
-    const selectedCity = pickString(body.proxyCity);
-    const preferredCity = selectedCity || pickString(company?.city);
+    const countryCodeUpper = selectedCountry.toUpperCase();
     
     let finalProxyConfig = {};
     const proxyApiUrl = process.env.SMARTPROXY_API_URL;
-    const proxyHost = process.env.MANAGED_PROXY_HOST;
-    const proxyPort = process.env.MANAGED_PROXY_PORT;
-    const proxyUser = process.env.MANAGED_PROXY_USER;
-    const proxyPass = process.env.MANAGED_PROXY_PASS;
+    
+    // Dynamically select proxy host and user based on country, fallback to default
+    const proxyHost = process.env[`MANAGED_PROXY_HOST_${countryCodeUpper}`] || process.env.MANAGED_PROXY_HOST;
+    const proxyPort = process.env[`MANAGED_PROXY_PORT_${countryCodeUpper}`] || process.env.MANAGED_PROXY_PORT;
+    const proxyUser = process.env[`MANAGED_PROXY_USER_${countryCodeUpper}`] || process.env.MANAGED_PROXY_USER;
+    const proxyPass = process.env[`MANAGED_PROXY_PASS_${countryCodeUpper}`] || process.env.MANAGED_PROXY_PASS;
+
 
 
     if (proxyApiUrl) {
