@@ -2,6 +2,28 @@ import { pickString, asObject } from "../utils";
 import { encryptLinkedInCredential, decryptLinkedInCredential } from "../crypto";
 import { createSupabaseServiceClient } from "../../supabase/server";
 
+// Fetches a single proxy from Smartproxy's extraction API.
+// Response format (TXT): "host:port" or "host:port:user:pass"
+async function fetchProxyFromApiUrl(apiUrl: string): Promise<{ server: string; username?: string; password?: string } | null> {
+  try {
+    const res = await fetch(apiUrl);
+    const text = (await res.text()).trim();
+    const line = text.split(/[\n\r]/)[0].trim();
+    if (!line) return null;
+    const parts = line.split(":");
+    if (parts.length === 4) {
+      return { server: `${parts[0]}:${parts[1]}`, username: parts[2], password: parts[3] };
+    }
+    if (parts.length >= 2) {
+      return { server: `${parts[0]}:${parts[1]}` };
+    }
+    return null;
+  } catch (e: any) {
+    console.warn(`[Scraper] fetchProxyFromApiUrl failed: ${e.message}`);
+    return null;
+  }
+}
+
 /**
  * Résout le chemin exécutable de Chrome selon l'environnement.
  * 1. Variable d'env PUPPETEER_EXECUTABLE_PATH (si elle existe réellement)
@@ -498,11 +520,22 @@ export async function runLinkedInLoginFlow(accountId: string) {
       "--window-size=1280,800",
     ];
 
-    if (proxy?.server && proxy?.username && proxy?.password) {
-      // Normalize server — strip any http:// prefix (old accounts may have it stored)
+    // Resolve proxy config — API extraction takes priority over static user:pass
+    let resolvedProxy: { server: string; username?: string; password?: string } | null = null;
+    if (proxy?.api_url) {
+      console.log(`[Scraper] Fetching proxy from Smartproxy API...`);
+      resolvedProxy = await fetchProxyFromApiUrl(proxy.api_url);
+      console.log(`[Scraper] Proxy from API: ${resolvedProxy?.server ?? "none"}`);
+    } else if (proxy?.server) {
       const rawServer = String(proxy.server).replace(/^https?:\/\//, "");
-      const upstream = `http://${proxy.username}:${proxy.password}@${rawServer}`;
-      console.log(`[Scraper] proxy-chain upstream: http://${proxy.username}:***@${rawServer}`);
+      resolvedProxy = { server: rawServer, username: proxy.username, password: proxy.password };
+    }
+
+    if (resolvedProxy) {
+      const upstream = resolvedProxy.username && resolvedProxy.password
+        ? `http://${resolvedProxy.username}:${resolvedProxy.password}@${resolvedProxy.server}`
+        : `http://${resolvedProxy.server}`;
+      console.log(`[Scraper] proxy-chain upstream: ${upstream.replace(/:([^:@]+)@/, ':***@')}`);
       try {
         anonProxyUrl = await proxyChain.anonymizeProxy(upstream);
         launchArgs.push(`--proxy-server=${anonProxyUrl}`);
@@ -630,34 +663,35 @@ export async function runLinkedInLoginFlow(accountId: string) {
       const { challengeType, challengeHint } = await page.evaluate(() => {
         const text = document.body.innerText.toLowerCase();
         const url = document.location.href;
+        const bodyText = document.body.innerText;
+
+        // Push notification detection (LinkedIn app confirmation)
+        const isPush = text.includes("notification") || text.includes("appli linkedin") ||
+          text.includes("application linkedin") || text.includes("ouvrez votre") ||
+          text.includes("open your linkedin") || text.includes("identifiez-vous");
 
         let type: string;
-        if (url.includes("phone") || text.includes("sms") || text.includes("téléphone") || text.includes("phone")) {
+        if (isPush) {
+          type = "app_push";
+        } else if (url.includes("phone") || text.includes("sms") || text.includes("téléphone") || text.includes("phone")) {
           type = "sms_code";
         } else {
           type = "email_code";
         }
 
-        // Extract masked email or phone hint from the challenge description line
         let hint: string | null = null;
-        const bodyText = document.body.innerText;
-
-        // Email hint: contains @ with at least one * (e.g. e***@g***.com)
         const emailMatch = bodyText.match(/[a-zA-Z*]+\*+[a-zA-Z*]*@[a-zA-Z*]+\.[a-zA-Z*]{2,}/);
         if (emailMatch) {
           hint = emailMatch[0];
         } else {
-          // Phone hint: line containing bullets/stars followed by 2–4 digits (e.g. "••••23" or "+•• ••23")
           const phoneMatch = bodyText.match(/[•*]{2,}[\s\-]?\d{2,4}(?!\d)/);
           if (phoneMatch) hint = phoneMatch[0].trim();
         }
-
-        // Fallback: grab the short line that describes where the code was sent
         if (!hint) {
-          const lines = bodyText.split('\n').map(l => l.trim()).filter(l => l.length > 5 && l.length < 80);
-          const destLine = lines.find(l =>
+          const lines = bodyText.split('\n').map((l: string) => l.trim()).filter((l: string) => l.length > 5 && l.length < 80);
+          const destLine = lines.find((l: string) =>
             (l.includes('@') || /[•*]{2}/.test(l)) &&
-            (l.toLowerCase().includes('envoy') || l.toLowerCase().includes('sent') || l.toLowerCase().includes('envoyer'))
+            (l.toLowerCase().includes('envoy') || l.toLowerCase().includes('sent'))
           );
           if (destLine) hint = destLine;
         }
@@ -679,79 +713,90 @@ export async function runLinkedInLoginFlow(accountId: string) {
         .single();
 
       if (challengeError) throw challengeError;
-
       await supabase.from("linkedin_accounts").update({ status: "challenge_pending" }).eq("id", accountId);
 
-      console.log(`[Scraper] Waiting for 2FA code for challenge ${challenge.id}...`);
-      let code = null;
-      const startTime = Date.now();
-      while (Date.now() - startTime < 120000) {
-        const { data: updatedChallenge } = await supabase
-          .from("linkedin_challenges")
-          .select("code, challenge_status")
-          .eq("id", challenge.id)
-          .single();
-
-        if (updatedChallenge?.code) {
-          code = updatedChallenge.code;
-          break;
-        }
-        if (updatedChallenge?.challenge_status === "expired") break;
-
-        await new Promise(r => setTimeout(r, 5000));
-      }
-
-      if (code) {
-        console.log("[Scraper] Code received. Finding input...");
-
-        // Try each selector individually — page.type() doesn't support comma-separated selectors
-        const pinSelectors = [
-          'input[name="pin"]',
-          '#input__email_verification_pin',
-          '#input__phone_verification_pin',
-          '#email-pin',
-          'input[autocomplete="one-time-code"]',
-          'input[type="text"]',
-          'input[type="number"]',
-          'input[type="tel"]',
-        ];
-
-        let pinSelector: string | null = null;
-        for (const sel of pinSelectors) {
+      if (challengeType === "app_push") {
+        // User confirms in LinkedIn mobile app → LinkedIn auto-navigates the headless browser
+        console.log("[Scraper] Push notification challenge. Waiting up to 3min for app confirmation...");
+        let confirmed = false;
+        try {
+          await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 180000 });
+          confirmed = true;
+          console.log("[Scraper] App push confirmed — page navigated to:", page.url());
+        } catch {
+          // Timeout: try to fall back to email/SMS code
+          console.warn("[Scraper] Push notification timeout. Trying 'no device access' fallback...");
           try {
-            await page.waitForSelector(sel, { timeout: 2000 });
-            pinSelector = sel;
-            break;
-          } catch { /* try next */ }
+            // Click "Je n'ai pas accès à cet appareil" to switch to email code
+            const fallbackSelectors = [
+              'a[href*="challenge"]',
+              'button[data-control-name="challenge_trigger_push_resend"]',
+              'a:contains("n\'ai pas")',
+            ];
+            for (const sel of fallbackSelectors) {
+              const el = await page.$(sel);
+              if (el) { await el.click(); break; }
+            }
+            // Try text-based click
+            await page.evaluate(() => {
+              const links = Array.from(document.querySelectorAll('a, button'));
+              const el = links.find(l => l.textContent?.includes("n'ai pas accès") || l.textContent?.includes("no access"));
+              if (el) (el as HTMLElement).click();
+            });
+          } catch { /* ignore */ }
         }
-
-        if (!pinSelector) {
-          const pageHtml = await page.evaluate(() => document.body.innerHTML.substring(0, 1500));
-          throw new Error(`Aucun champ PIN trouvé. HTML: ${pageHtml}`);
+        if (!confirmed) {
+          await supabase.from("linkedin_challenges").update({ challenge_status: "expired" }).eq("id", challenge.id);
+          throw new Error("2FA push notification timeout — user did not confirm in LinkedIn app");
         }
+        await supabase.from("linkedin_challenges").update({ challenge_status: "solved" }).eq("id", challenge.id);
 
-        await page.click(pinSelector);
-        await page.type(pinSelector, code, { delay: 100 });
-
-        const submitSelectors = [
-          '#email-pin-submit-button',
-          '#two-step-submit-button',
-          'button[type="submit"]',
-          'button[data-id="submit"]',
-        ];
-
-        for (const sel of submitSelectors) {
-          try {
-            await page.waitForSelector(sel, { timeout: 1000 });
-            await page.click(sel);
-            break;
-          } catch { /* try next */ }
-        }
-
-        await page.waitForNavigation({ waitUntil: "networkidle2" }).catch(() => {});
       } else {
-        await supabase.from("linkedin_challenges").update({ challenge_status: "expired" }).eq("id", challenge.id);
-        throw new Error("2FA timeout");
+        // Email or SMS: wait for PIN code entered by user in the UI
+        console.log(`[Scraper] Waiting for PIN code for challenge ${challenge.id}...`);
+        let code = null;
+        const startTime = Date.now();
+        while (Date.now() - startTime < 120000) {
+          const { data: updatedChallenge } = await supabase
+            .from("linkedin_challenges")
+            .select("code, challenge_status")
+            .eq("id", challenge.id)
+            .single();
+          if (updatedChallenge?.code) { code = updatedChallenge.code; break; }
+          if (updatedChallenge?.challenge_status === "expired") break;
+          await new Promise(r => setTimeout(r, 5000));
+        }
+
+        if (code) {
+          console.log("[Scraper] Code received. Finding input...");
+          const pinSelectors = [
+            'input[name="pin"]',
+            '#input__email_verification_pin',
+            '#input__phone_verification_pin',
+            '#email-pin',
+            'input[autocomplete="one-time-code"]',
+            'input[type="text"]',
+            'input[type="number"]',
+            'input[type="tel"]',
+          ];
+          let pinSelector: string | null = null;
+          for (const sel of pinSelectors) {
+            try { await page.waitForSelector(sel, { timeout: 2000 }); pinSelector = sel; break; } catch { /* next */ }
+          }
+          if (!pinSelector) {
+            const pageHtml = await page.evaluate(() => document.body.innerHTML.substring(0, 1500));
+            throw new Error(`Aucun champ PIN trouvé. HTML: ${pageHtml}`);
+          }
+          await page.click(pinSelector);
+          await page.type(pinSelector, code, { delay: 100 });
+          for (const sel of ['#email-pin-submit-button', '#two-step-submit-button', 'button[type="submit"]']) {
+            try { await page.waitForSelector(sel, { timeout: 1000 }); await page.click(sel); break; } catch { /* next */ }
+          }
+          await page.waitForNavigation({ waitUntil: "networkidle2" }).catch(() => {});
+        } else {
+          await supabase.from("linkedin_challenges").update({ challenge_status: "expired" }).eq("id", challenge.id);
+          throw new Error("2FA timeout");
+        }
       }
     }
 

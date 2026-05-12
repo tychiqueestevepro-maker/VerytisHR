@@ -34,7 +34,7 @@ export function LinkedinSecureSetup() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [twoFactorCode, setTwoFactorCode] = useState("");
   const [challengeHint, setChallengeHint] = useState<string | null>(null);
-  const [challengeType, setChallengeType] = useState<"email_code" | "sms_code" | null>(null);
+  const [challengeType, setChallengeType] = useState<"email_code" | "sms_code" | "app_push" | null>(null);
 
   const form = useForm<SetupFormValues>({
     resolver: zodResolver(setupSchema),
@@ -256,42 +256,56 @@ export function LinkedinSecureSetup() {
                 </div>
               </div>
 
-              <div className="bg-amber-50 rounded-xl p-4 border border-amber-100 flex gap-3">
-                <Mail className="size-5 text-amber-600 shrink-0 mt-0.5" />
-                <div className="text-sm text-amber-700 leading-6">
-                  {challengeHint ? (
-                    <>
-                      Code envoyé{challengeType === "sms_code" ? " par SMS" : " par email"} à{" "}
-                      <span className="font-mono font-semibold">{challengeHint}</span>
-                    </>
-                  ) : (
-                    <>Vérifiez vos {challengeType === "sms_code" ? "SMS" : "emails"} pour le code LinkedIn.</>
-                  )}
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <Input 
-                  value={twoFactorCode}
-                  onChange={(e) => setTwoFactorCode(e.target.value)}
-                  placeholder="Code de vérification" 
-                  className="text-center text-2xl tracking-[0.5em] font-mono h-16 bg-secondary/5 border-border focus:ring-amber-500"
-                />
-
-                {errorMessage && (
-                  <div className="flex items-center gap-2 rounded-lg bg-rose-50 p-3 text-rose-600 text-sm">
-                    <AlertCircle className="size-4 shrink-0" />
-                    <p>{errorMessage}</p>
+              {challengeType === "app_push" ? (
+                <>
+                  <div className="bg-amber-50 rounded-xl p-4 border border-amber-100 flex gap-3">
+                    <ShieldCheck className="size-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="text-sm text-amber-700 leading-6">
+                      Ouvrez votre app <span className="font-semibold">LinkedIn</span> et appuyez sur <span className="font-semibold">Oui</span> pour confirmer la connexion.
+                    </div>
                   </div>
-                )}
-
-                <Button onClick={submit2FA} className="w-full h-11 bg-amber-600 hover:bg-amber-700 text-white">
-                  Valider le code
-                </Button>
-                <Button variant="ghost" className="w-full text-xs text-foreground/40 hover:bg-transparent" onClick={() => setStep("form")}>
-                  Annuler et recommencer
-                </Button>
-              </div>
+                  <div className="flex flex-col items-center gap-3 py-4">
+                    <Loader2 className="size-8 text-amber-500 animate-spin" />
+                    <p className="text-sm text-foreground/50">En attente de confirmation dans l&apos;app…</p>
+                  </div>
+                  <Button variant="ghost" className="w-full text-xs text-foreground/40 hover:bg-transparent" onClick={() => setStep("form")}>
+                    Annuler et recommencer
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <div className="bg-amber-50 rounded-xl p-4 border border-amber-100 flex gap-3">
+                    <Mail className="size-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="text-sm text-amber-700 leading-6">
+                      {challengeHint ? (
+                        <>Code envoyé{challengeType === "sms_code" ? " par SMS" : " par email"} à <span className="font-mono font-semibold">{challengeHint}</span></>
+                      ) : (
+                        <>Vérifiez vos {challengeType === "sms_code" ? "SMS" : "emails"} pour le code LinkedIn.</>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-4">
+                    <Input
+                      value={twoFactorCode}
+                      onChange={(e) => setTwoFactorCode(e.target.value)}
+                      placeholder="Code de vérification"
+                      className="text-center text-2xl tracking-[0.5em] font-mono h-16 bg-secondary/5 border-border focus:ring-amber-500"
+                    />
+                    {errorMessage && (
+                      <div className="flex items-center gap-2 rounded-lg bg-rose-50 p-3 text-rose-600 text-sm">
+                        <AlertCircle className="size-4 shrink-0" />
+                        <p>{errorMessage}</p>
+                      </div>
+                    )}
+                    <Button onClick={submit2FA} className="w-full h-11 bg-amber-600 hover:bg-amber-700 text-white">
+                      Valider le code
+                    </Button>
+                    <Button variant="ghost" className="w-full text-xs text-foreground/40 hover:bg-transparent" onClick={() => setStep("form")}>
+                      Annuler et recommencer
+                    </Button>
+                  </div>
+                </>
+              )}
             </motion.div>
           )}
 

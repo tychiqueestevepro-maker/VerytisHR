@@ -38,49 +38,25 @@ export async function POST(request: Request) {
     const password = pickString(body.password);
     const preferredCity = pickString(company?.city);
     let finalProxyConfig = {};
+    const proxyApiUrl = process.env.SMARTPROXY_API_URL;
     const proxyHost = process.env.MANAGED_PROXY_HOST;
     const proxyPort = process.env.MANAGED_PROXY_PORT;
     const proxyUser = process.env.MANAGED_PROXY_USER;
     const proxyPass = process.env.MANAGED_PROXY_PASS;
 
-    if (proxyHost && proxyUser && proxyPass) {
-      // Utilisation du pool géré par Verytis avec ciblage par pays
+    if (proxyApiUrl) {
+      // API extraction mode — fetch a fresh proxy IP at runtime (bypasses port restrictions)
+      finalProxyConfig = { api_url: proxyApiUrl, is_managed: true };
+    } else if (proxyHost && proxyUser && proxyPass) {
+      // Fallback: static user:pass proxy
       const countryCode = (pickString(company?.country) || "FR").toLowerCase();
-      
       let managedUsername = proxyUser;
-      
-      // Smartproxy utilise -area- pour le pays d'après la capture
-      if (managedUsername.includes("{country}")) {
-        managedUsername = managedUsername.replace("{country}", countryCode);
-      } else if (!managedUsername.includes("-area-")) {
-        managedUsername = `${managedUsername}-area-${countryCode}`;
-      }
-      
-      // Ajout d'une SESSION STICKY rafraîchie à chaque tentative (pour changer d'IP si bloqué)
-      // On utilise l'email + l'heure actuelle pour forcer une nouvelle IP propre
-      const safeEmail = email || "default";
-      const timestamp = Math.floor(Date.now() / (1000 * 60 * 10)); // Change toutes les 10 min
-      const sessionId = Buffer.from(safeEmail + timestamp).toString('hex').substring(0, 8);
-      if (!managedUsername.includes("-session-")) {
-        managedUsername = `${managedUsername}-session-${sessionId}`;
-      }
-      
-      if (preferredCity) {
-        const citySlug = preferredCity.toLowerCase().trim().replace(/\s+/g, "");
-        if (managedUsername.includes("{city}")) {
-          managedUsername = managedUsername.replace("{city}", citySlug);
-        } else if (!managedUsername.includes("-city-")) {
-          managedUsername = `${managedUsername}-city-${citySlug}`;
-        }
-      }
-
+      if (!managedUsername.includes("-area-")) managedUsername = `${managedUsername}-area-${countryCode}`;
       finalProxyConfig = {
         server: `${proxyHost}:${proxyPort || '3121'}`,
         username: managedUsername,
         password: proxyPass,
         is_managed: true,
-        country: countryCode,
-        city: preferredCity
       };
     }
 
