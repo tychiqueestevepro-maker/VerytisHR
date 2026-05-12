@@ -24,11 +24,11 @@ async function fetchProxyFromApiUrl(apiUrl: string): Promise<{ server: string; u
     // host:port:user:pass
     if (parts.length === 4) {
       let rawUsername = parts[2].replace(/\s+/g, '');
-      if (rawUsername.includes("smart-elzkxq8jgewp")) rawUsername = rawUsername.replace("-country-fr", "");
       
       return { 
         server: `${parts[0].trim()}:${parts[1].trim()}`, 
         username: rawUsername, 
+
         password: parts[3].replace(/\s+/g, '') 
       };
     }
@@ -223,9 +223,9 @@ export async function scrapeLinkedInProfile(
     
     if (proxyConfig?.server && proxyConfig?.username && proxyConfig?.password) {
       let rawUsername = proxyConfig.username.replace(/\s+/g, "");
-      if (rawUsername.includes("smart-elzkxq8jgewp")) rawUsername = rawUsername.replace("-country-fr", "");
       await page.authenticate({ username: rawUsername, password: proxyConfig.password.replace(/\s+/g, "") });
     }
+
 
 
     // Stealth masks
@@ -549,12 +549,9 @@ export async function runLinkedInLoginFlow(accountId: string) {
     } else if (proxy?.server) {
       const rawServer = String(proxy.server).replace(/^https?:\/\//, "").replace(/\s+/g, "");
       let rawUsername = proxy.username ? String(proxy.username).replace(/\s+/g, "") : undefined;
-      // Forcefully remove -country-fr if the user accidentally added it but didn't configure it in Smartproxy
-      if (rawUsername && rawUsername.includes("smart-elzkxq8jgewp")) {
-        rawUsername = rawUsername.replace("-country-fr", "");
-      }
       
       resolvedProxy = { 
+
         server: rawServer, 
         username: rawUsername, 
         password: proxy.password ? String(proxy.password).replace(/\s+/g, "") : undefined 

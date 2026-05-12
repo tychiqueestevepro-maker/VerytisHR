@@ -44,6 +44,33 @@ export function LinkedinSecureSetup() {
     },
   });
 
+  // Restore state on mount if a connection is already in progress
+  useEffect(() => {
+    async function checkExistingConnection() {
+      try {
+        const res = await fetch("/api/hr/settings/linkedin-accounts");
+        const { accounts } = await res.json();
+        if (accounts && accounts.length > 0) {
+          const activeAccount = accounts[0]; // Assuming one account for now
+          if (activeAccount.status === "connecting") {
+            setAccountId(activeAccount.id);
+            setStep("connecting");
+          } else if (activeAccount.status === "challenge_pending") {
+            setAccountId(activeAccount.id);
+            setStep("2fa");
+          } else if (activeAccount.status === "connected") {
+            setAccountId(activeAccount.id);
+            setStep("success");
+          }
+        }
+      } catch (e) {
+        // Ignore errors on mount
+      }
+    }
+    checkExistingConnection();
+  }, []);
+
+
   // Fetch challenge hint when 2FA step is reached
   useEffect(() => {
     if (step !== "2fa" || !accountId) return;
