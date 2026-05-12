@@ -1,5 +1,5 @@
 [build]
-installCommand = "npm install --legacy-peer-deps && npx puppeteer browsers install chrome"
+installCommand = "npm install --legacy-peer-deps --include=optional && npx puppeteer browsers install chrome"
 buildCommand = "npm run build && mkdir -p .next/standalone/.next/static && cp -r .next/static/. .next/standalone/.next/static/ && cp -r public .next/standalone/public"
 
 [deploy]

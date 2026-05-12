@@ -45,7 +45,9 @@
   "optionalDependencies": {
     "@parcel/watcher-linux-x64-glibc": "^2.5.6",
     "@parcel/watcher-linux-x64-musl": "^2.5.6",
-    "@swc/core-linux-x64-gnu": "^1.15.33"
+    "@swc/core-linux-x64-gnu": "^1.15.33",
+    "lightningcss-linux-x64-gnu": "^1.32.0",
+    "lightningcss-linux-x64-musl": "^1.32.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
