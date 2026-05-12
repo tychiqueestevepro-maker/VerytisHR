@@ -478,41 +478,38 @@ export async function runLinkedInLoginFlow(accountId: string) {
   const proxy = account.proxy_config as any;
 
   let browser = null;
-  let useProxy = Boolean(proxy && proxy.server);
-  
+  let anonProxyUrl: string | null = null;
+  const puppeteer = (await import("puppeteer")) as any;
+  const proxyChain = (await import("proxy-chain")) as any;
+
   try {
-    const puppeteer = (await import("puppeteer")) as any;
     const chromePath = await getChromePath();
-    console.log(`[Scraper] runLinkedInLoginFlow — chrome: ${chromePath ?? "auto"}, proxy: ${proxy?.server ?? "none"}, user: ${proxy?.username ?? "none"}`);
-    
-    // --- Phase 1: Launch browser (with proxy if configured) ---
-    const buildLaunchOptions = (withProxy: boolean) => {
-      const opts: any = {
-        headless: true,
-        executablePath: chromePath,
-        args: [
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-dev-shm-usage",
-          "--disable-blink-features=AutomationControlled",
-          "--window-size=1280,800",
-        ],
-      };
-      if (withProxy && proxy && proxy.server) {
-        opts.args.push(`--proxy-server=${proxy.server}`);
+    console.log(`[Scraper] runLinkedInLoginFlow — chrome: ${chromePath ?? "auto"}, proxy: ${proxy?.server ?? "none"}`);
+
+    // Build launch args — proxy-chain creates a local tunnel to handle HTTPS CONNECT auth
+    const launchArgs: string[] = [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-blink-features=AutomationControlled",
+      "--window-size=1280,800",
+    ];
+
+    if (proxy?.server && proxy?.username && proxy?.password) {
+      const upstream = `http://${proxy.username}:${proxy.password}@${proxy.server}`;
+      try {
+        anonProxyUrl = await proxyChain.anonymizeProxy(upstream);
+        launchArgs.push(`--proxy-server=${anonProxyUrl}`);
+        console.log(`[Scraper] proxy-chain tunnel: ${anonProxyUrl}`);
+      } catch (e: any) {
+        console.warn(`[Scraper] proxy-chain failed, falling back to direct: ${e.message}`);
+        anonProxyUrl = null;
       }
-      return opts;
-    };
-
-    browser = await puppeteer.launch(buildLaunchOptions(useProxy));
-    let page = await browser.newPage();
-
-    if (useProxy && proxy.username && proxy.password) {
-      await page.authenticate({
-        username: proxy.username,
-        password: proxy.password,
-      });
     }
+
+    browser = await puppeteer.launch({ headless: true, executablePath: chromePath, args: launchArgs });
+    let page = await browser.newPage();
+    // No page.authenticate() needed — proxy-chain handles auth in the local tunnel
 
     // User-Agent moderne
     await page.setUserAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
@@ -542,47 +539,36 @@ export async function runLinkedInLoginFlow(accountId: string) {
       'Accept-Language': 'fr-FR,fr;q=0.9',
     });
 
-    // --- Phase 2: Pre-flight proxy check ---
-    if (useProxy) {
-      console.log(`[Scraper] Testing proxy tunnel (HTTPS)...`);
+    // --- Phase 2: Pre-flight IP check ---
+    if (anonProxyUrl) {
+      console.log(`[Scraper] Testing proxy tunnel via proxy-chain...`);
       try {
-        // Test with an HTTPS URL to verify the CONNECT tunnel works
-        await page.goto("https://httpbin.org/ip", { waitUntil: "networkidle2", timeout: 20000 });
-        const text = await page.evaluate(() => document.body.innerText);
-        console.log(`[Scraper] ✅ Proxy tunnel OK — IP: ${text.trim()}`);
-        
-        // Save detected IP
-        try {
-          const ipInfo = JSON.parse(text);
-          if (ipInfo.origin) {
-            await supabase.from("linkedin_accounts").update({ last_detected_ip: ipInfo.origin }).eq("id", accountId);
-          }
-        } catch { /* ignore parse errors */ }
+        await page.goto("https://api.ip.cc", { waitUntil: "networkidle2", timeout: 20000 });
+        const ip = await page.evaluate(() => document.body.innerText.trim());
+        console.log(`[Scraper] ✅ Proxy OK — IP: ${ip}`);
+        await supabase.from("linkedin_accounts").update({ last_detected_ip: ip }).eq("id", accountId);
       } catch (proxyErr: any) {
         console.error(`[Scraper] ❌ Proxy tunnel FAILED: ${proxyErr.message}`);
-        console.warn(`[Scraper] Proxy details — server: ${proxy.server}, user: ${proxy.username}`);
-        console.warn(`[Scraper] Falling back to DIRECT connection (no proxy)...`);
-        
-        // Close the broken browser and restart without proxy
-        useProxy = false;
+        console.warn(`[Scraper] Falling back to direct connection...`);
+        if (anonProxyUrl) {
+          await proxyChain.closeAnonymizedProxy(anonProxyUrl, true).catch(() => {});
+          anonProxyUrl = null;
+        }
+        // browser will be closed just below
         await browser.close();
-        browser = await puppeteer.launch(buildLaunchOptions(false));
-        page = await browser.newPage();
-        
-        // Re-apply stealth
-        await page.setUserAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
-        await page.evaluateOnNewDocument(() => {
-          Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-          Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
-          Object.defineProperty(navigator, 'languages', { get: () => ['fr-FR', 'fr', 'en'] });
+        browser = await puppeteer.launch({
+          headless: true,
+          executablePath: chromePath,
+          args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-blink-features=AutomationControlled", "--window-size=1280,800"],
         });
+        page = await browser.newPage();
+        await page.setUserAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
+        await page.evaluateOnNewDocument(() => { Object.defineProperty(navigator, 'webdriver', { get: () => undefined }); });
         await page.setExtraHTTPHeaders({ 'Accept-Language': 'fr-FR,fr;q=0.9' });
-        
-        // Check our direct IP
         try {
-          await page.goto("https://httpbin.org/ip", { waitUntil: "networkidle2", timeout: 15000 });
-          const directIp = await page.evaluate(() => document.body.innerText);
-          console.log(`[Scraper] Direct IP: ${directIp.trim()}`);
+          await page.goto("https://api.ip.cc", { waitUntil: "networkidle2", timeout: 15000 });
+          const directIp = await page.evaluate(() => document.body.innerText.trim());
+          console.log(`[Scraper] Direct IP: ${directIp}`);
         } catch { /* non-critical */ }
       }
     }
@@ -642,14 +628,28 @@ export async function runLinkedInLoginFlow(accountId: string) {
           type = "email_code";
         }
 
-        // Extract masked email or phone hint
+        // Extract masked email or phone hint from the challenge description line
         let hint: string | null = null;
-        const emailMatch = document.body.innerText.match(/[a-zA-Z*]+@[a-zA-Z*.]+\.[a-zA-Z*]+/);
+        const bodyText = document.body.innerText;
+
+        // Email hint: contains @ with at least one * (e.g. e***@g***.com)
+        const emailMatch = bodyText.match(/[a-zA-Z*]+\*+[a-zA-Z*]*@[a-zA-Z*]+\.[a-zA-Z*]{2,}/);
         if (emailMatch) {
           hint = emailMatch[0];
         } else {
-          const phoneMatch = document.body.innerText.match(/[*•x\d]{2,}[\s]?\d{2,4}/i);
+          // Phone hint: line containing bullets/stars followed by 2–4 digits (e.g. "••••23" or "+•• ••23")
+          const phoneMatch = bodyText.match(/[•*]{2,}[\s\-]?\d{2,4}(?!\d)/);
           if (phoneMatch) hint = phoneMatch[0].trim();
+        }
+
+        // Fallback: grab the short line that describes where the code was sent
+        if (!hint) {
+          const lines = bodyText.split('\n').map(l => l.trim()).filter(l => l.length > 5 && l.length < 80);
+          const destLine = lines.find(l =>
+            (l.includes('@') || /[•*]{2}/.test(l)) &&
+            (l.toLowerCase().includes('envoy') || l.toLowerCase().includes('sent') || l.toLowerCase().includes('envoyer'))
+          );
+          if (destLine) hint = destLine;
         }
 
         return { challengeType: type, challengeHint: hint };
@@ -786,5 +786,6 @@ export async function runLinkedInLoginFlow(accountId: string) {
     return { success: false, error: error.message };
   } finally {
     if (browser) await browser.close();
+    if (anonProxyUrl) await proxyChain.closeAnonymizedProxy(anonProxyUrl, true).catch(() => {});
   }
 }
