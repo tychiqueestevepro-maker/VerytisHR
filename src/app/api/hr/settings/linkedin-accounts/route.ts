@@ -49,15 +49,10 @@ export async function POST(request: Request) {
     const email = pickString(body.email);
     const password = pickString(body.password);
     
-    // Logique de sélection du pays : User > Header > Company > "fr"
+    // Logique de sélection du pays : User > Header > Company
     const userMeta = userProfile?.metadata as any;
     let selectedCountry = userMeta?.country || headerCountry || pickString(company?.country) || "";
     
-    // Fallback local : Si on est en développement et qu'aucun pays n'est trouvé, on prend FR
-    if (!selectedCountry && process.env.NODE_ENV === "development") {
-      selectedCountry = "fr";
-    }
-
     const countryCodeUpper = selectedCountry.toUpperCase();
     const preferredCity = userMeta?.city || pickString(company?.city);
 
