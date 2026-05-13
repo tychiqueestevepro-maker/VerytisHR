@@ -741,6 +741,14 @@ export async function runLinkedInLoginFlow(accountId: string) {
 
     let loginFinished = false;
 
+    async function updateStatus(msg: string) {
+      console.log(`[Scraper] Status: ${msg}`);
+      await supabase.from("linkedin_accounts").update({ 
+        status: "connecting", // Ensure status remains connecting while updating message
+        last_error: msg 
+      }).eq("id", accountId);
+    }
+
     // --- Phase 1: Pre-flight check ---
     // Check if we already have a session from cookies (unlikely if cleared, but for robustness)
     const initialCookies = await page.cookies();
@@ -751,11 +759,11 @@ export async function runLinkedInLoginFlow(accountId: string) {
 
     if (!loginFinished) {
       // --- Phase 2: Human-like Navigation ---
-      console.log(`[Scraper] Anti-detect: Initial landing on home page...`);
+      await updateStatus("Connexion au tunnel résidentiel...");
       await page.goto("https://www.linkedin.com/", { waitUntil: "networkidle2", timeout: 45000 }).catch(() => {});
       
       // --- Human Warm-up Phase ---
-      console.log(`[Scraper] 🌡️ Warming up (simulating human behavior)...`);
+      await updateStatus("Simulation d'activité humaine...");
       await page.evaluate(async () => {
         const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
         for (let i = 0; i < 3; i++) {
@@ -765,7 +773,7 @@ export async function runLinkedInLoginFlow(accountId: string) {
       });
       await new Promise(r => setTimeout(r, 2000 + Math.random() * 2000));
 
-      console.log(`[Scraper] Navigating to login page...`);
+      await updateStatus("Accès à la page de connexion...");
       await page.goto("https://www.linkedin.com/login", { waitUntil: "networkidle2", timeout: 45000 });
     }
 
@@ -810,7 +818,7 @@ export async function runLinkedInLoginFlow(accountId: string) {
           await page.keyboard.type(password, { delay: 150 });
         }
 
-        console.log(`[Scraper] Credentials entered. Submitting...`);
+        await updateStatus("Validation des identifiants...");
         await page.keyboard.press('Enter');
 
         // Fallback click if Enter doesn't work
@@ -865,7 +873,7 @@ export async function runLinkedInLoginFlow(accountId: string) {
       throw new Error("LinkedIn demande une vérification de sécurité (CAPTCHA). Changez d'IP ou réessayez plus tard.");
     }
 
-    console.log(`[Scraper] Waiting for post-login navigation...`);
+    await updateStatus("Finalisation de la session...");
     await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 }).catch(() => {
       console.log("[Scraper] Navigation timeout (this is common if 2FA or slow redirect happens).");
     });
@@ -909,7 +917,7 @@ export async function runLinkedInLoginFlow(accountId: string) {
       if (!is2FA) {
         // If we are on a login page but no 2FA, maybe we need to wait
         const bodySnippet = await page.evaluate(() => document.body.innerText.substring(0, 300).replace(/\n/g, ' '));
-        console.log(`[Scraper] No 2FA detected. Page snippet: "${bodySnippet}"`);
+        await updateStatus(`Analyse de la page (${challengeAttempts + 1}/3)...`);
         
         await new Promise(r => setTimeout(r, 3000));
         challengeAttempts++;

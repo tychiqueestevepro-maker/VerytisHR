@@ -281,8 +281,10 @@ export function LinkedinSecureSetup() {
                 </div>
               </div>
               <div>
-                <p className="text-sm text-foreground/50 max-w-[240px] mx-auto mt-2">
-                  Sécurisation via proxy résidentiel...
+                <p className="text-sm font-medium text-foreground/80 max-w-[280px] mx-auto mt-2">
+                  {activeAccount?.status === "connecting" && activeAccount?.last_error 
+                    ? activeAccount.last_error 
+                    : "Sécurisation via proxy résidentiel..."}
                 </p>
               </div>
               <div className="flex gap-1">
