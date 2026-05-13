@@ -177,7 +177,8 @@ export function parseDateTextToIso(value: string): string | null {
 export async function scrapeLinkedInProfile(
   url: string, 
   sessionOrCookie?: any | string | null,
-  proxyConfig?: any
+  proxyConfig?: any,
+  accountId?: string
 ): Promise<LinkedInProfileData | null> {
   if (!url) return null;
 
@@ -215,16 +216,35 @@ export async function scrapeLinkedInProfile(
 
     if (proxyConfig?.server && proxyConfig?.username && proxyConfig?.password) {
       const rawServer = String(proxyConfig.server).replace(/^https?:\/\//, "");
+      let rawUsername = proxyConfig.username.replace(/\s+/g, "");
+      
+      // For standard scraping: Use a STABLE session ID based on account ID or a hash
+      if (rawUsername && (rawUsername.includes('smartproxy') || rawUsername.includes('verytis'))) {
+        const stableSession = accountId ? accountId.substring(0, 8) : "default"; 
+        if (rawUsername.includes('-session-')) {
+          rawUsername = rawUsername.replace(/-session-[^:-]+/, `-session-${stableSession}`);
+        } else {
+          rawUsername = `${rawUsername}-session-${stableSession}`;
+        }
+      }
+
+
       launchOptions.args.push(`--proxy-server=http://${rawServer}`);
+      // Save for authentication
+      (launchOptions as any)._resolvedUsername = rawUsername;
     }
+
 
     browser = await puppeteer.launch(launchOptions);
     const page = await browser.newPage();
     
-    if (proxyConfig?.server && proxyConfig?.username && proxyConfig?.password) {
-      let rawUsername = proxyConfig.username.replace(/\s+/g, "");
-      await page.authenticate({ username: rawUsername, password: proxyConfig.password.replace(/\s+/g, "") });
+    if (proxyConfig?.server && (launchOptions as any)._resolvedUsername && proxyConfig?.password) {
+      await page.authenticate({ 
+        username: (launchOptions as any)._resolvedUsername, 
+        password: proxyConfig.password.replace(/\s+/g, "") 
+      });
     }
+
 
 
 
@@ -551,7 +571,8 @@ export async function runLinkedInLoginFlow(accountId: string) {
   const proxy = account.proxy_config as any;
 
   let browser = null;
-  let anonProxyUrl: string | null = null;
+  let finalProxyUrl: string | null = null;
+
   const puppeteer = (await import("puppeteer")) as any;
   const proxyChain = (await import("proxy-chain")) as any;
 
@@ -578,8 +599,11 @@ export async function runLinkedInLoginFlow(accountId: string) {
       const rawServer = String(proxy.server).replace(/^https?:\/\//, "").replace(/\s+/g, "");
       let rawUsername = proxy.username ? String(proxy.username).replace(/\s+/g, "") : undefined;
       
-      resolvedProxy = { 
+      // The user's specific proxy provider (smartproxy.fr) uses `_area-FR` for targeting.
+      // Appending `-session-xxx` corrupts their parser and causes random global IPs.
+      // We will leave rawUsername exactly as configured in .env.local.
 
+      resolvedProxy = { 
         server: rawServer, 
         username: rawUsername, 
         password: proxy.password ? String(proxy.password).replace(/\s+/g, "") : undefined 
@@ -591,62 +615,91 @@ export async function runLinkedInLoginFlow(accountId: string) {
       launchArgs.push(`--proxy-server=http://${resolvedProxy.server}`);
       console.log(`[Scraper] Using native Puppeteer proxy authentication for: ${resolvedProxy.server}`);
     } else if (proxy && (proxy.server || proxy.api_url)) {
-
       throw new Error("Proxy configuré mais aucune IP résolue — vérifiez les credentials Smartproxy.");
     }
 
-    // Pre-flight: raw TCP socket to see exact proxy response (tolerant of malformed HTTP)
+    // Pre-flight: raw TCP socket to see exact proxy response
+    let proxyReady = false;
+    let retryCount = 0;
+    while (!proxyReady && retryCount < 2) {
+      if (resolvedProxy) {
+        let { server, username, password } = resolvedProxy;
+        let [pHost, pPortStr] = server.split(":");
+        let pPort = parseInt(pPortStr || "3120", 10);
+        if (retryCount === 1 && pPort === 3120) pPort = 80;
+        
+        try {
+          await new Promise<void>((resolve, reject) => {
+            const net = require("net");
+            const socket: any = net.createConnection({ host: pHost, port: pPort, timeout: 20000 });
+            socket.on("connect", () => {
+              const auth = Buffer.from(`${username}:${password}`).toString("base64");
+              socket.write(`GET http://httpbin.org/ip HTTP/1.1\r\nHost: httpbin.org\r\nProxy-Authorization: Basic ${auth}\r\nConnection: close\r\n\r\n`);
+            });
+            let responseData = "";
+            socket.on("data", (data: Buffer) => { responseData += data.toString(); });
+            socket.on("end", () => {
+              if (responseData.includes("200 OK") || responseData.includes("origin")) {
+                proxyReady = true;
+                resolve();
+              } else {
+                reject(new Error("Auth failed"));
+              }
+            });
+            socket.on("error", (err: any) => reject(err));
+            socket.on("timeout", () => { socket.destroy(); reject(new Error("Timeout")); });
+          });
+        } catch (e) {
+          console.error(`[Scraper] Proxy health check failed for ${pHost}:${pPort} (Attempt ${retryCount+1})`, e);
+          retryCount++;
+          // We no longer append session strings to rotate, as the provider doesn't support it.
+          if (retryCount >= 2) {
+            throw new Error(`Le proxy Smartproxy (${pHost}:${pPort}) ne répond pas. Vérifiez vos identifiants ou votre connexion réseau.`);
+          }
+        }
+      } else {
+        proxyReady = true;
+      }
+    }
+
+    // --- Dissimulation & Tunneling ---
+    let finalProxyUrl: string | null = null;
     if (resolvedProxy) {
       const { server, username, password } = resolvedProxy;
-      const [proxyHost, proxyPortStr] = server.split(":");
-      const proxyPort = parseInt(proxyPortStr || "3120", 10);
-      await new Promise<void>((resolve, reject) => {
-        const net = require("net");
-        const socket: any = net.createConnection({ host: proxyHost, port: proxyPort, timeout: 10000 });
-        socket.on("connect", () => {
-          const auth = Buffer.from(`${username}:${password}`).toString("base64");
-          // Send a standard HTTP GET through the proxy to get the real error message
-          socket.write(`GET http://httpbin.org/ip HTTP/1.1\r\nHost: httpbin.org\r\nProxy-Authorization: Basic ${auth}\r\nConnection: close\r\n\r\n`);
-        });
-        
-        let responseData = "";
-        socket.on("data", (data: Buffer) => {
-          responseData += data.toString();
-        });
+      let [host, port] = server.split(":");
+      
+      // Fallback: If we had a failure, try port 80 for the external connection
+      if (retryCount >= 1 && port === "3120") {
+        console.log(`[Scraper] Using port 80 for stealth fallback...`);
+        port = "80";
+      }
 
-        socket.on("end", () => {
-          console.log(`[Scraper] Raw proxy response:\n${responseData.substring(0, 500)}`);
-          if (responseData.includes("200 OK") || responseData.includes("origin")) {
-            console.log(`[Scraper] ✅ Raw TCP to proxy OK`);
-            resolve();
-          } else {
-            // Extract the body if present
-            const bodySplit = responseData.split("\r\n\r\n");
-            const body = bodySplit.length > 1 ? bodySplit[1].trim() : "No body";
-            reject(new Error(`Proxy a refusé la connexion. Code/Body: ${body}`));
-          }
-        });
+      const encUser = encodeURIComponent(username || "");
+      const encPass = encodeURIComponent(password || "");
+      const upstreamUrl = `http://${encUser}:${encPass}@${host}:${port}`;
+      try {
+        // Create an anonymous local tunnel
+        finalProxyUrl = await proxyChain.anonymizeProxy(upstreamUrl);
 
-        socket.on("error", (e: Error) => {
-
-          console.error(`[Scraper] ❌ Raw TCP to proxy FAILED: ${e.message}`);
-          reject(new Error(`Proxy inaccessible (TCP): ${e.message}`));
-        });
-        socket.on("timeout", () => {
-          console.error(`[Scraper] Raw TCP to proxy TIMEOUT`);
-          socket.destroy();
-          reject(new Error(`Proxy timeout (10s) — port ${proxyPort} bloqué ou IP morte ?`));
-        });
-      });
+        console.log(`[Scraper] Stealth tunnel created: ${finalProxyUrl}`);
+      } catch (e) {
+        console.error("[Scraper] Failed to create stealth tunnel, using direct proxy", e);
+        finalProxyUrl = upstreamUrl;
+      }
     }
 
-    browser = await puppeteer.launch({ headless: true, executablePath: chromePath, args: launchArgs });
-    let page = await browser.newPage();
+    const launchOptions: any = {
+      headless: true,
+      executablePath: chromePath,
+      args: [...launchArgs]
+    };
+
+    if (finalProxyUrl) {
+      launchOptions.args.push(`--proxy-server=${finalProxyUrl}`);
+    }
     
-    // Native proxy authentication (now that credentials are sanitized and correct)
-    if (resolvedProxy && resolvedProxy.username && resolvedProxy.password) {
-      await page.authenticate({ username: resolvedProxy.username, password: resolvedProxy.password });
-    }
+    browser = await puppeteer.launch(launchOptions);
+    let page = await browser.newPage();
 
     // User-Agent moderne
     await page.setUserAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
@@ -671,104 +724,201 @@ export async function runLinkedInLoginFlow(accountId: string) {
       Object.defineProperty(navigator, 'languages', { get: () => ['fr-FR', 'fr', 'en'] });
     });
 
-    // Headers minimalistes mais propres
+    // Headers minimalistes mais propres et sécurisés pour éviter "Unknown Browser/OS"
     await page.setExtraHTTPHeaders({
       'Accept-Language': 'fr-FR,fr;q=0.9',
+      'Sec-Ch-Ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+      'Sec-Ch-Ua-Mobile': '?0',
+      'Sec-Ch-Ua-Platform': '"macOS"',
     });
 
     let detectedIp = null;
 
-    // --- Phase 2: Pre-flight IP check ---
-    if (resolvedProxy) {
+    // --- Clear Cookies for a Fresh Start ---
+    const client = await page.target().createCDPSession();
+    await client.send('Network.clearBrowserCookies');
+    console.log(`[Scraper] Browser cookies cleared for a fresh login session.`);
 
-      console.log(`[Scraper] Testing native proxy tunnel...`);
+    let loginFinished = false;
 
-      try {
-        // Use a reliable HTTPS IP check service
-        await page.goto("https://api.ipify.org", { waitUntil: "networkidle2", timeout: 20000 });
-        const ip = await page.evaluate(() => document.body.innerText.trim());
-
-        console.log(`[Scraper] ✅ Proxy OK — IP: ${ip}`);
-        detectedIp = ip;
-        await supabase.from("linkedin_accounts").update({ last_detected_ip: ip }).eq("id", accountId);
-
-      } catch (proxyErr: any) {
-        console.error(`[Scraper] ❌ Proxy tunnel FAILED: ${proxyErr.message}`);
-        throw new Error(`Proxy tunnel échoué — ${proxyErr.message}`);
-      }
+    // --- Phase 1: Pre-flight check ---
+    // Check if we already have a session from cookies (unlikely if cleared, but for robustness)
+    const initialCookies = await page.cookies();
+    if (initialCookies.find((c: any) => c.name === "li_at")) {
+      console.log("[Scraper] Existing li_at found before login. Skipping to success.");
+      loginFinished = true;
     }
-    
-    console.log(`[Scraper] Anti-detect: Initial landing on home page...`);
-    await page.goto("https://www.linkedin.com/", { waitUntil: "domcontentloaded", timeout: 30000 });
-    
-    // --- Human Warm-up Phase ---
-    console.log(`[Scraper] 🌡️ Warming up (simulating human behavior)...`);
-    await page.evaluate(async () => {
-      const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-      // Random scrolling
-      for (let i = 0; i < 3; i++) {
-        window.scrollBy(0, Math.floor(Math.random() * 400) + 200);
-        await delay(Math.floor(Math.random() * 1500) + 500);
-      }
-      // Hover random elements
-      const links = document.querySelectorAll('a');
-      const randomLink = links[Math.floor(Math.random() * links.length)];
-      if (randomLink) (randomLink as any).scrollIntoView();
-    });
-    await new Promise(r => setTimeout(r, 2000 + Math.random() * 2000));
 
-    console.log(`[Scraper] Navigating to login...`);
-    await page.goto("https://www.linkedin.com/login", { waitUntil: "networkidle2", timeout: 30000 });
+    if (!loginFinished) {
+      // --- Phase 2: Human-like Navigation ---
+      console.log(`[Scraper] Anti-detect: Initial landing on home page...`);
+      await page.goto("https://www.linkedin.com/", { waitUntil: "networkidle2", timeout: 45000 }).catch(() => {});
+      
+      // --- Human Warm-up Phase ---
+      console.log(`[Scraper] 🌡️ Warming up (simulating human behavior)...`);
+      await page.evaluate(async () => {
+        const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+        for (let i = 0; i < 3; i++) {
+          window.scrollBy(0, Math.floor(Math.random() * 400) + 200);
+          await delay(Math.floor(Math.random() * 1000) + 500);
+        }
+      });
+      await new Promise(r => setTimeout(r, 2000 + Math.random() * 2000));
 
-    const userSelector = "#username, #session_key, input[name='session_key'], input[type='email'], input[type='text']";
-    const passSelector = "#password, #session_password, input[name='session_password'], input[type='password']";
+      console.log(`[Scraper] Navigating to login page...`);
+      await page.goto("https://www.linkedin.com/login", { waitUntil: "networkidle2", timeout: 45000 });
+    }
 
-    
+    // --- Phase 3: Login Interaction ---
+    const userSelector = "#username, #session_key, input[name='session_key'], input[type='email'], input[autocomplete='username']";
+    const passSelector = "#password, #session_password, input[name='session_password'], input[type='password'], input[autocomplete='current-password']";
+
     try {
-      // Wait for either the login fields OR a security challenge indicator
-      await page.waitForSelector(userSelector, { timeout: 15000 });
-    } catch (e) {
-      const title = await page.title();
-      const body = await page.evaluate(() => document.body.innerText);
-      const hasCaptcha = body.includes("CAPTCHA") || body.includes("security check") || body.includes("vérification de sécurité") || body.includes("prouvez que vous n'êtes pas un robot");
+      // Vérifier si déjà connecté
+      const alreadyLoggedIn = await page.evaluate(() => {
+        return !!document.querySelector('.global-nav') || window.location.href.includes('feed');
+      });
       
-      console.error(`[Scraper] Detection. Title: "${title}". Captcha detected: ${hasCaptcha}`);
-      
-      if (hasCaptcha) {
-        throw new Error(`LinkedIn demande une vérification humaine (CAPTCHA). L'IP du proxy est probablement trop sollicitée. Testez dans 10 min ou changez de sous-compte.`);
-      }
+      if (alreadyLoggedIn) {
+        console.log("[Scraper] Already logged in!");
+        loginFinished = true;
+      } else {
+        await page.waitForSelector(userSelector, { timeout: 45000 });
+        console.log(`[Scraper] Entering credentials...`);
+        
+        // Trouver la case e-mail VISIBLE (ignore les champs cachés)
+        const emailFound = await page.evaluate(() => {
+          const emails = Array.from(document.querySelectorAll("input[type='email'], input[autocomplete='username'], #username, #session_key"));
+          const el = emails.find(e => (e as HTMLElement).offsetWidth > 0 && (e as HTMLElement).offsetHeight > 0) || document.querySelector("input[type='email']");
+          if (el) { (el as HTMLElement).focus(); return true; }
+          return false;
+        });
+        
+        if (emailFound) {
+          await page.keyboard.type(email, { delay: 120 });
+        }
+        
+        // Trouver la case mot de passe VISIBLE
+        const passFound = await page.evaluate(() => {
+          const passes = Array.from(document.querySelectorAll("input[type='password'], input[autocomplete='current-password'], #password, #session_password"));
+          const el = passes.find(e => (e as HTMLElement).offsetWidth > 0 && (e as HTMLElement).offsetHeight > 0) || document.querySelector("input[type='password']");
+          if (el) { (el as HTMLElement).focus(); return true; }
+          return false;
+        });
+        
+        if (passFound) {
+          await page.keyboard.type(password, { delay: 150 });
+        }
 
-      // If we don't see the fields but we don't see a captcha either, maybe it's just a different layout
-      // Let's try one last time to find ANY input
-      const inputs = await page.$$("input");
-      if (inputs.length < 2) {
-        throw new Error(`LinkedIn bloque l'accès ou la page est illisible (Title: ${title}).`);
+        console.log(`[Scraper] Credentials entered. Submitting...`);
+        await page.keyboard.press('Enter');
+
+        // Fallback click if Enter doesn't work
+        await page.evaluate(() => {
+          const btns = Array.from(document.querySelectorAll('button[type="submit"], .login__form_action_container button, button[value="Sign in"], button[aria-label="Sign in"]'));
+          const el = btns.find(b => (b as HTMLElement).offsetWidth > 0 && (b as HTMLElement).offsetHeight > 0);
+          if (el) (el as HTMLElement).click();
+        });
+
+        console.log(`[Scraper] Login submission sent.`);
       }
+    } catch (e: any) {
+      const title = await page.title();
+      const bodyText = await page.evaluate(() => document.body.innerText);
+      const inputs = await page.evaluate(() => {
+        return Array.from(document.querySelectorAll('input')).map(i => `${i.tagName} id=${i.id} type=${i.type} name=${i.name}`).join(', ');
+      });
+      
+      if (bodyText.includes("CAPTCHA") || bodyText.includes("vérification de sécurité") || bodyText.includes("security check")) {
+        throw new Error("LinkedIn demande un CAPTCHA. Changez d'IP ou réessayez plus tard.");
+      }
+      console.error(`[Scraper] Login interaction failed: ${e.message}. Title: ${title}. Inputs found: ${inputs}`);
+      throw new Error(`Impossible de trouver le formulaire de connexion (Page: ${title}). Inputs: ${inputs || "aucun"}`);
     }
 
-
-    await new Promise(r => setTimeout(r, 2000));
-    await page.type(userSelector, email, { delay: 180 });
-    await page.type(passSelector, password, { delay: 200 });
-    await page.click('button[type="submit"]');
-
-    await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 30000 }).catch(() => {});
-
-    // Check for 2FA
-    const is2FA = await page.evaluate(() => {
-      return !!(
-        document.querySelector('input[name="pin"]') ||
-        document.querySelector('#input__email_verification_pin') ||
-        document.querySelector('#input__phone_verification_pin') ||
-        document.querySelector('#email-pin') ||
-        document.querySelector('input[autocomplete="one-time-code"]') ||
-        document.location.href.includes("checkpoint/challenge") ||
-        document.location.href.includes("checkpoint/lg/login-submit")
-      );
+    // Wait for either navigation or error message
+    await new Promise(r => setTimeout(r, 5000));
+    
+    const loginError = await page.evaluate(() => {
+      const text = document.body.innerText.toLowerCase();
+      if (text.includes("e-mail ou mot de passe erroné") || 
+          text.includes("adresse e-mail ou mot de passe incorrect") ||
+          text.includes("wrong email or password") ||
+          text.includes("identifiants sont incorrects")) {
+        return "Email ou mot de passe incorrect sur LinkedIn.";
+      }
+      return null;
     });
 
-    if (is2FA) {
-      console.log("[Scraper] 2FA detected. Extracting challenge info...");
+    if (loginError) throw new Error(loginError);
+
+    // Check for CAPTCHA/Security Check right after submission
+    const securityCheck = await page.evaluate(() => {
+      const text = document.body.innerText.toLowerCase();
+      return text.includes("vérification de sécurité") || text.includes("security check") || 
+             text.includes("captcha") || document.querySelector('#captcha-internal') || 
+             document.location.href.includes('checkpoint/rp/captcha');
+    });
+
+    if (securityCheck) {
+      console.error("[Scraper] CAPTCHA or Security Check detected after login.");
+      throw new Error("LinkedIn demande une vérification de sécurité (CAPTCHA). Changez d'IP ou réessayez plus tard.");
+    }
+
+    console.log(`[Scraper] Waiting for post-login navigation...`);
+    await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 }).catch(() => {
+      console.log("[Scraper] Navigation timeout (this is common if 2FA or slow redirect happens).");
+    });
+
+    // --- Phase 4: Handle 2FA Challenges (Looping for transitions) ---
+    let challengeAttempts = 0;
+
+    while (!loginFinished && challengeAttempts < 3) {
+      const currentUrl = page.url();
+      console.log(`[Scraper] 2FA Loop — Attempt ${challengeAttempts + 1}, URL: ${currentUrl}`);
+
+      // Early exit if cookie is found
+      const cookies = await page.cookies();
+      if (cookies.find((c: any) => c.name === "li_at")) {
+        console.log("[Scraper] li_at cookie found! Login successful.");
+        loginFinished = true;
+        break;
+      }
+
+      const is2FA = await page.evaluate(() => {
+        const text = document.body.innerText.toLowerCase();
+        const url = window.location.href.toLowerCase();
+        return !!(
+          document.querySelector('input[name="pin"]') ||
+          document.querySelector('#input__email_verification_pin') ||
+          document.querySelector('#input__phone_verification_pin') ||
+          document.querySelector('#email-pin') ||
+          document.querySelector('input[autocomplete="one-time-code"]') ||
+          url.includes("checkpoint/challenge") ||
+          url.includes("checkpoint/lg/login-submit") ||
+          url.includes("checkpoint/lg/2fa") ||
+          text.includes("confirmez votre identité") ||
+          text.includes("confirm your identity") ||
+          text.includes("vérification en deux étapes") ||
+          text.includes("two-step verification") ||
+          text.includes("code de vérification") ||
+          text.includes("verification code")
+        );
+      }).catch(() => false);
+
+      if (!is2FA) {
+        // If we are on a login page but no 2FA, maybe we need to wait
+        const bodySnippet = await page.evaluate(() => document.body.innerText.substring(0, 300).replace(/\n/g, ' '));
+        console.log(`[Scraper] No 2FA detected. Page snippet: "${bodySnippet}"`);
+        
+        await new Promise(r => setTimeout(r, 3000));
+        challengeAttempts++;
+        continue;
+      }
+
+      // If we are here, we ARE in a challenge, so reset the "unrecognized page" counter
+      challengeAttempts = 0; 
+      console.log("[Scraper] 2FA detected. Identifying type...");
 
       // Debug: dump full page text to understand what LinkedIn shows
       const pageTextDump = await page.evaluate(() => document.body.innerText.substring(0, 800));
@@ -784,23 +934,32 @@ export async function runLinkedInLoginFlow(accountId: string) {
           text.includes("application linkedin") || text.includes("ouvrez votre") ||
           text.includes("open your linkedin") || text.includes("identifiez-vous");
 
+        // Extract input presence
+        const hasInput = !!document.querySelector('input[name="pin"], #input__email_verification_pin, #input__phone_verification_pin');
+
         let type: string;
-        if (isPush) {
+        if (!hasInput && isPush) {
           type = "app_push";
-        } else if (url.includes("phone") || text.includes("sms") || text.includes("téléphone") || text.includes("phone")) {
+        } else if (hasInput && (url.includes("phone") || text.includes("sms") || text.includes("téléphone") || text.includes("phone"))) {
           type = "sms_code";
-        } else {
+        } else if (hasInput) {
           type = "email_code";
+        } else {
+          // Default to app push if no input is found on a challenge page
+          type = "app_push";
         }
 
         let hint: string | null = null;
-        const emailMatch = bodyText.match(/[a-zA-Z*]+\*+[a-zA-Z*]*@[a-zA-Z*]+\.[a-zA-Z*]{2,}/);
+        const emailMatch = bodyText.match(/[a-zA-Z*0-9._%+-]+@+[a-zA-Z*0-9.-]+\.[a-zA-Z*]{2,}/);
         if (emailMatch) {
           hint = emailMatch[0];
+          // Force type to email if we found an email hint
+          if (hasInput) type = "email_code";
         } else {
           const phoneMatch = bodyText.match(/[•*]{2,}[\s\-]?\d{2,4}(?!\d)/);
           if (phoneMatch) hint = phoneMatch[0].trim();
         }
+
         if (!hint) {
           const lines = bodyText.split('\n').map((l: string) => l.trim()).filter((l: string) => l.length > 5 && l.length < 80);
           const destLine = lines.find((l: string) =>
@@ -812,6 +971,36 @@ export async function runLinkedInLoginFlow(accountId: string) {
 
         return { challengeType: type, challengeHint: hint };
       });
+
+
+      // --- New: Auto-trigger Code Sending ---
+      // Some 2FA flows require clicking a "Send code" button first.
+      try {
+        await page.evaluate(async () => {
+          const buttons = Array.from(document.querySelectorAll('button, a'));
+          const triggerBtn = buttons.find(b => {
+            const t = (b.textContent || "").toLowerCase();
+            return t.includes("envoyer le code") || t.includes("send code") || 
+                   t.includes("recevoir un code") || t.includes("get a code") ||
+                   t.includes("envoyer une notification") || t.includes("send a notification") ||
+                   t.includes("envoyer une demande") || t.includes("send a request") ||
+                   (t.includes("continuer") && !t.includes("annuler")) ||
+                   (t.includes("continue") && !t.includes("cancel"));
+          });
+
+          if (triggerBtn) {
+            (triggerBtn as HTMLElement).click();
+            return true;
+          }
+          return false;
+        });
+        // Small wait to let the page refresh after click
+        await new Promise(r => setTimeout(r, 2500));
+      } catch (e) {
+        console.warn("[Scraper] Failed to auto-trigger 2FA send button", e);
+      }
+      // --------------------------------------
+
 
       console.log(`[Scraper] Challenge type: ${challengeType}, hint: ${challengeHint ?? "none"}`);
 
@@ -830,47 +1019,82 @@ export async function runLinkedInLoginFlow(accountId: string) {
       await supabase.from("linkedin_accounts").update({ status: "challenge_pending" }).eq("id", accountId);
 
       if (challengeType === "app_push") {
-        // User confirms in LinkedIn mobile app → LinkedIn auto-navigates the headless browser
-        console.log("[Scraper] Push notification challenge. Waiting up to 3min for app confirmation...");
+        console.log("[Scraper] Push notification challenge. Polling for app confirmation or manual fallback...");
         let confirmed = false;
-        try {
-          // LinkedIn might not trigger a full navigation, or networkidle2 might never be reached due to background polling.
-          // Wait for the URL to change to /feed/ or /checkpoint/post-login, or for a feed element to appear.
-          await Promise.race([
-            page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 180000 }),
-            page.waitForSelector('.scaffold-layout', { timeout: 180000 }),
-            page.waitForFunction(() => window.location.href.includes('feed') || window.location.href.includes('post-login'), { timeout: 180000 })
-          ]);
+        let manualFallback = false;
+        const startTime = Date.now();
+        const MAX_WAIT = 180000; // 3 minutes
 
-          confirmed = true;
-          console.log("[Scraper] App push confirmed — page navigated to:", page.url());
-        } catch {
-          // Timeout: try to fall back to email/SMS code
-          console.warn("[Scraper] Push notification timeout. Trying 'no device access' fallback...");
+        while (Date.now() - startTime < MAX_WAIT) {
+          const currentUrl = page.url();
+          console.log(`[Scraper] Polling Push Status — URL: ${currentUrl}`);
+
+          // --- AUTO-GUÉRISON PROXY ---
+          if (currentUrl.includes('chrome-error')) {
+            console.log("[Scraper] Proxy connection dropped! Recovering by navigating to feed...");
+            await page.goto("https://www.linkedin.com/feed/", { waitUntil: "domcontentloaded", timeout: 15000 }).catch(() => {});
+            continue; // Skip the rest of the loop and check the new URL next iteration
+          }
+
+          const isLoggedIn = await page.evaluate(() => {
+            const url = window.location.href;
+            return url.includes('feed') || 
+                   url.includes('identity') ||
+                   url.includes('mynetwork') ||
+                   url.includes('messaging') ||
+                   url.includes('jobs') ||
+                   url.includes('post-login') ||
+                   !!document.querySelector('.global-nav') || 
+                   !!document.querySelector('.scaffold-layout') ||
+                   !!document.querySelector('input[placeholder*="Search"]') ||
+                   !!document.querySelector('input[placeholder*="recherche"]');
+          }).catch(() => false);
+
+          if (isLoggedIn) {
+            console.log("[Scraper] Push confirmed via navigation!");
+            confirmed = true;
+            break;
+          }
+
+          const { data: dbChallenge } = await supabase
+            .from("linkedin_challenges")
+            .select("challenge_status")
+            .eq("id", challenge.id)
+            .single();
+
+          if (dbChallenge?.challenge_status === "expired") {
+            console.log("[Scraper] Manual fallback detected from UI.");
+            manualFallback = true;
+            break;
+          }
+          await new Promise(r => setTimeout(r, 2000));
+        }
+
+        if (!confirmed || manualFallback) {
+          console.warn("[Scraper] Switching to 'no device access' fallback...");
           try {
-            // Click "Je n'ai pas accès à cet appareil" to switch to email code
-            const fallbackSelectors = [
-              'a[href*="challenge"]',
-              'button[data-control-name="challenge_trigger_push_resend"]',
-              'a:contains("n\'ai pas")',
-            ];
-            for (const sel of fallbackSelectors) {
-              const el = await page.$(sel);
-              if (el) { await el.click(); break; }
-            }
-            // Try text-based click
             await page.evaluate(() => {
               const links = Array.from(document.querySelectorAll('a, button'));
-              const el = links.find(l => l.textContent?.includes("n'ai pas accès") || l.textContent?.includes("no access"));
+              const el = links.find(l => 
+                l.textContent?.toLowerCase().includes("n'ai pas accès") || 
+                l.textContent?.toLowerCase().includes("no access") ||
+                l.textContent?.toLowerCase().includes("autre moyen") ||
+                l.textContent?.toLowerCase().includes("another way")
+              );
               if (el) (el as HTMLElement).click();
             });
+            await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 10000 }).catch(() => {});
           } catch { /* ignore */ }
         }
-        if (!confirmed) {
+
+        if (!confirmed && !manualFallback) {
           await supabase.from("linkedin_challenges").update({ challenge_status: "expired" }).eq("id", challenge.id);
-          throw new Error("2FA push notification timeout — user did not confirm in LinkedIn app");
+          throw new Error("2FA push notification timeout");
         }
-        await supabase.from("linkedin_challenges").update({ challenge_status: "solved" }).eq("id", challenge.id);
+        
+        if (confirmed) {
+          await supabase.from("linkedin_challenges").update({ challenge_status: "solved" }).eq("id", challenge.id);
+        }
 
       } else {
         // Email or SMS: wait for PIN code entered by user in the UI
@@ -910,10 +1134,22 @@ export async function runLinkedInLoginFlow(accountId: string) {
           }
           await page.click(pinSelector);
           await page.type(pinSelector, code, { delay: 100 });
+          await page.keyboard.press('Enter'); // Reliable submit
+
           for (const sel of ['#email-pin-submit-button', '#two-step-submit-button', 'button[type="submit"]']) {
             try { await page.waitForSelector(sel, { timeout: 1000 }); await page.click(sel); break; } catch { /* next */ }
           }
-          await page.waitForNavigation({ waitUntil: "networkidle2" }).catch(() => {});
+          await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 10000 }).catch(() => {});
+            
+          // Check for incorrect PIN error
+          const pinError = await page.evaluate(() => {
+            const text = document.body.innerText.toLowerCase();
+            if (text.includes("code incorrect") || text.includes("invalid code") || text.includes("réessayez")) {
+              return "Le code PIN saisi est incorrect ou a expiré.";
+            }
+            return null;
+          });
+          if (pinError) throw new Error(pinError);
         } else {
           await supabase.from("linkedin_challenges").update({ challenge_status: "expired" }).eq("id", challenge.id);
           throw new Error("2FA timeout");
@@ -925,24 +1161,28 @@ export async function runLinkedInLoginFlow(accountId: string) {
     const cookies = await page.cookies();
     const liAt = cookies.find((c: any) => c.name === "li_at");
 
-    if (liAt) {
-      console.log("[Scraper] Login successful. Saving session...");
+    if (liAt && liAt.value && liAt.value.length > 10) {
+      console.log("[Scraper] Login verified. Syncing session...");
       
-      // Get all session data
       const sessionData = {
         cookies: cookies,
         localStorage: await page.evaluate(() => JSON.stringify(localStorage)),
         sessionStorage: await page.evaluate(() => JSON.stringify(sessionStorage)),
+        user_agent: await page.evaluate(() => navigator.userAgent)
       };
 
-      // Save to linkedin_sessions
-      await supabase.from("linkedin_sessions").insert({
-        account_id: accountId,
-        session_data: sessionData,
-        user_agent: await page.evaluate(() => navigator.userAgent)
-      });
+      // 1. Sync cookie to Company Metadata for global app usage
+      const fullCookieString = cookies.map((c: any) => `${c.name}=${c.value}`).join('; ');
+      const { data: company } = await supabase.from("companies").select("metadata").eq("id", account.company_id).single();
+      const nextMetadata = { 
+        ...(company?.metadata as any || {}), 
+        linkedin_session_cookie: `li_at=${liAt.value}`,
+        linkedin_full_cookie: fullCookieString,
+        linkedin_cookie_updated_at: new Date().toISOString()
+      };
+      await supabase.from("companies").update({ metadata: nextMetadata }).eq("id", account.company_id);
 
-      // Extract profile name for UI feedback
+      // 2. Extract profile info
       const accountInfo = await page.evaluate(() => {
         const nameEl = document.querySelector('.feed-identity-module__actor-link, .nav-settings__member-name, .t-16.t-black.t-bold');
         const locationEl = document.querySelector('.feed-identity-module__location, .t-12.t-black--light.t-normal');
@@ -960,20 +1200,19 @@ export async function runLinkedInLoginFlow(accountId: string) {
         lastName = parts.slice(1).join(' ');
       }
 
-      // Update account with real name and IP
+      // 3. Final update to account status
       await supabase.from("linkedin_accounts").update({ 
         status: "connected",
         first_name: firstName,
         last_name: lastName,
         last_detected_ip: detectedIp,
-        preferred_city: accountInfo.location || preferredCity,
+        preferred_city: accountInfo.location || account.preferred_city,
         last_error: null 
       }).eq("id", accountId);
 
-
       return { success: true };
     } else {
-      throw new Error("Login failed - li_at cookie not found");
+      throw new Error("Connexion échouée : LinkedIn n'a pas validé la session.");
     }
 
   } catch (error: any) {
@@ -985,6 +1224,10 @@ export async function runLinkedInLoginFlow(accountId: string) {
     return { success: false, error: error.message };
   } finally {
     if (browser) await browser.close();
-    if (anonProxyUrl) await proxyChain.closeAnonymizedProxy(anonProxyUrl, true).catch(() => {});
+    if (finalProxyUrl) {
+      const pc = (await import("proxy-chain")) as any;
+      await pc.closeAnonymizedProxy(finalProxyUrl, true).catch(() => {});
+    }
   }
+
 }

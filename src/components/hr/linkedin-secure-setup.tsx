@@ -38,6 +38,7 @@ export function LinkedinSecureSetup() {
   const [twoFactorCode, setTwoFactorCode] = useState("");
   const [challengeHint, setChallengeHint] = useState<string | null>(null);
   const [challengeType, setChallengeType] = useState<"email_code" | "sms_code" | "app_push" | null>(null);
+  const [activeAccount, setActiveAccount] = useState<any>(null);
 
   const form = useForm<SetupFormValues>({
     resolver: zodResolver(setupSchema),
@@ -53,10 +54,17 @@ export function LinkedinSecureSetup() {
   useEffect(() => {
     async function checkExistingConnection() {
       try {
-        const res = await fetch("/api/hr/settings/linkedin-accounts");
+        const res = await fetch(`/api/hr/settings/linkedin-accounts?t=${Date.now()}`, { cache: 'no-store' });
         const { accounts } = await res.json();
         if (accounts && accounts.length > 0) {
-          const activeAccount = accounts[0]; // Assuming one account for now
+          // Priority to active/connected accounts
+          const sortedAccounts = [...accounts].sort((a: any, b: any) => {
+            const priority: Record<string, number> = { "connected": 3, "connecting": 2, "challenge_pending": 1, "error": 0, "disconnected": 0 };
+            return (priority[b.status] || 0) - (priority[a.status] || 0);
+          });
+          const activeAccount = sortedAccounts[0];
+          
+          setActiveAccount(activeAccount);
           if (activeAccount.status === "connecting") {
             setAccountId(activeAccount.id);
             setStep("connecting");
@@ -82,12 +90,13 @@ export function LinkedinSecureSetup() {
     let cancelled = false;
     const poll = setInterval(async () => {
       try {
-        const res = await fetch(`/api/hr/settings/linkedin-accounts/${accountId}/challenge`);
+        const res = await fetch(`/api/hr/settings/linkedin-accounts/${accountId}/challenge?t=${Date.now()}`, { cache: 'no-store' });
         const { challenge } = await res.json();
         if (cancelled) return;
+        if (challenge?.id) setChallengeId(challenge.id);
         if (challenge?.challenge_hint) {
           setChallengeHint(challenge.challenge_hint);
-          clearInterval(poll);
+          // Don't clear poll if we still need the ID for fallback
         }
         if (challenge?.challenge_type) setChallengeType(challenge.challenge_type);
       } catch { /* ignore */ }
@@ -95,34 +104,35 @@ export function LinkedinSecureSetup() {
     return () => { cancelled = true; clearInterval(poll); };
   }, [step, accountId]);
 
-  // Polling for account status
+  // Polling for account status (Runs during connection and 2FA wait)
   useEffect(() => {
-    if (step !== "connecting") return;
-
-    const interval = setInterval(async () => {
+    if (step !== "connecting" && step !== "2fa") return;
+    const poll = setInterval(async () => {
       if (!accountId) return;
       try {
-        const res = await fetch(`/api/hr/settings/linkedin-accounts`);
+        const res = await fetch(`/api/hr/settings/linkedin-accounts?t=${Date.now()}`, { cache: 'no-store' });
         const { accounts } = await res.json();
         const account = accounts.find((a: any) => a.id === accountId);
+        
+        if (account) setActiveAccount(account);
 
         if (account?.status === "connected") {
           setStep("success");
-          clearInterval(interval);
+          clearInterval(poll);
         } else if (account?.status === "challenge_pending") {
           setStep("2fa");
-          clearInterval(interval);
+          // NE PAS faire clearInterval ici, sinon l'UI arrête d'écouter la fin du processus !
         } else if (account?.status === "error") {
           setStep("error");
           setErrorMessage(account.last_error);
-          clearInterval(interval);
+          clearInterval(poll);
         }
       } catch (e) {
         console.error("Polling failed", e);
       }
     }, 3000);
 
-    return () => clearInterval(interval);
+    return () => clearInterval(poll);
   }, [step, accountId]);
 
   async function onSubmit(values: SetupFormValues) {
@@ -146,6 +156,21 @@ export function LinkedinSecureSetup() {
     } catch (e: any) {
       setStep("form");
       setErrorMessage(e.message);
+    }
+  }
+
+  async function handleFallbackToEmail() {
+    if (!challengeId) return;
+    try {
+      await fetch("/api/hr/settings/linkedin-sync", {
+        method: "POST",
+        body: JSON.stringify({ 
+          action: "fallback_to_email",
+          challengeId: challengeId 
+        }),
+      });
+    } catch (e) {
+      console.error(e);
     }
   }
 
@@ -302,6 +327,12 @@ export function LinkedinSecureSetup() {
                   <div className="flex flex-col items-center gap-3 py-4">
                     <Loader2 className="size-8 text-amber-500 animate-spin" />
                     <p className="text-sm text-foreground/50">En attente de confirmation dans l&apos;app…</p>
+                    <button 
+                      onClick={() => handleFallbackToEmail()}
+                      className="text-[12px] text-primary hover:underline mt-4 font-medium"
+                    >
+                      Je n'ai pas reçu la notification (Utiliser un code Email)
+                    </button>
                   </div>
                   <Button variant="ghost" className="w-full text-xs text-foreground/40 hover:bg-transparent" onClick={() => setStep("form")}>
                     Annuler et recommencer
@@ -356,14 +387,16 @@ export function LinkedinSecureSetup() {
               </div>
               <div>
                 <h3 className="text-2xl font-bold">Compte Connecté !</h3>
-                <div className="mt-4 p-3 rounded-lg bg-secondary/5 border border-border inline-flex flex-col gap-1 items-center">
+                <div className="mt-4 p-3 rounded-lg bg-secondary/5 border border-border inline-flex flex-col gap-1 items-center w-full">
                   <div className="flex items-center gap-2 text-[11px] font-bold text-foreground/40 uppercase tracking-widest">
                     <Globe className="size-3" />
-                    Serveur Verytis
+                    Tunnel Sécurisé
                   </div>
-                  <p className="text-sm font-mono text-foreground/80">
-                    {/* We'll need to fetch this from the account state if available */}
-                    Localisation validée
+                  <div className="text-sm font-medium">
+                    {activeAccount?.first_name ? `${activeAccount.first_name} ${activeAccount.last_name}` : activeAccount?.email}
+                  </div>
+                  <p className="text-xs font-mono text-emerald-600 bg-emerald-50 px-2 py-1 rounded">
+                    Proxy : {activeAccount?.preferred_city || "France"} ({activeAccount?.last_detected_ip || "Actif"})
                   </p>
                 </div>
               </div>

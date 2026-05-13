@@ -4,6 +4,9 @@ import { pickString } from "@/lib/hr/utils";
 import { encryptLinkedInCredential } from "@/lib/hr/crypto";
 import { runLinkedInLoginFlow } from "@/lib/hr/scraper/linkedin";
 
+export const dynamic = 'force-dynamic'; // Désactive le cache agressif de Next.js
+export const revalidate = 0;
+
 export async function GET() {
   try {
     const { supabase, companyId } = await getHrContext({ recruiter: true });
@@ -23,35 +26,53 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const { supabase, companyId } = await getHrContext({ recruiter: true });
+    const { supabase, companyId, authUserId } = await getHrContext({ recruiter: true });
     
-    // On récupère les infos de l'entreprise pour le pays par défaut
+    // 1. On cherche d'abord le pays de l'UTILISATEUR (Recruteur)
+    const { data: userProfile } = await supabase
+      .from("users")
+      .select("metadata")
+      .eq("id", authUserId)
+      .single();
+    
+    // 2. On cherche le pays de l'ENTREPRISE (Fallback 1)
     const { data: company } = await supabase
       .from("companies")
       .select("country, city")
       .eq("id", companyId)
       .single();
 
+    // 3. On regarde les headers de la requête (Fallback 2 - utile en prod)
+    const headerCountry = request.headers.get("x-vercel-ip-country") || request.headers.get("cf-ipcountry");
+
     const body = await request.json();
-    
     const email = pickString(body.email);
     const password = pickString(body.password);
     
-    // Map proxy to company location
-    const selectedCountry = pickString(company?.country) || "fr";
-    const countryCodeUpper = selectedCountry.toUpperCase();
-    const preferredCity = pickString(company?.city);
-
-
+    // Logique de sélection du pays : User > Header > Company > "us"
+    const userMeta = userProfile?.metadata as any;
+    let selectedCountry = userMeta?.country || headerCountry || pickString(company?.country) || "";
     
+    // Fallback local : Si on est en développement et qu'aucun pays n'est trouvé, on prend US
+    if (!selectedCountry && process.env.NODE_ENV === "development") {
+      selectedCountry = "us";
+    }
+
+    const countryCodeUpper = selectedCountry.toUpperCase();
+    const preferredCity = userMeta?.city || pickString(company?.city);
+
+    // Tentative de récupération des variables spécifiques au pays, sinon global
+    const countryHost = countryCodeUpper ? process.env[`MANAGED_PROXY_HOST_${countryCodeUpper}`] : null;
+    const proxyHost = countryHost || process.env.MANAGED_PROXY_HOST;
+    const proxyPort = (countryCodeUpper ? process.env[`MANAGED_PROXY_PORT_${countryCodeUpper}`] : null) || process.env.MANAGED_PROXY_PORT;
+    const proxyUser = (countryCodeUpper ? process.env[`MANAGED_PROXY_USER_${countryCodeUpper}`] : null) || process.env.MANAGED_PROXY_USER;
+    const proxyPass = (countryCodeUpper ? process.env[`MANAGED_PROXY_PASS_${countryCodeUpper}`] : null) || process.env.MANAGED_PROXY_PASS;
+ 
+    console.log(`[Proxy Selection] Country: ${selectedCountry || "GLOBAL"}, Host: ${proxyHost}`);
+    if (countryHost) console.log(`[Proxy Selection] Successfully matched country-specific proxy for ${countryCodeUpper}`);
+ 
     let finalProxyConfig = {};
     const proxyApiUrl = process.env.SMARTPROXY_API_URL;
-    
-    // Dynamically select proxy host and user based on country, fallback to default
-    const proxyHost = process.env[`MANAGED_PROXY_HOST_${countryCodeUpper}`] || process.env.MANAGED_PROXY_HOST;
-    const proxyPort = process.env[`MANAGED_PROXY_PORT_${countryCodeUpper}`] || process.env.MANAGED_PROXY_PORT;
-    const proxyUser = process.env[`MANAGED_PROXY_USER_${countryCodeUpper}`] || process.env.MANAGED_PROXY_USER;
-    const proxyPass = process.env[`MANAGED_PROXY_PASS_${countryCodeUpper}`] || process.env.MANAGED_PROXY_PASS;
 
 
 
@@ -67,6 +88,7 @@ export async function POST(request: Request) {
         username: managedUsername,
         password: proxyPass,
         is_managed: true,
+        country: selectedCountry.toLowerCase()
       };
 
     }
@@ -77,6 +99,9 @@ export async function POST(request: Request) {
     }
 
     const encryptedPassword = encryptLinkedInCredential(password);
+
+    // On garde l'historique pour le débug (au lieu de tout supprimer systématiquement)
+    // await supabase.from("linkedin_accounts").delete().eq("company_id", companyId);
 
     const { data: account, error } = await supabase
       .from("linkedin_accounts")
@@ -93,8 +118,11 @@ export async function POST(request: Request) {
 
     if (error) throw error;
 
-    // Trigger background login flow (don't await it to avoid timeout)
-    runLinkedInLoginFlow(account.id).catch(console.error);
+    // Trigger background login flow
+    console.log(`[API] Triggering LinkedIn login flow for account: ${account.id}`);
+    runLinkedInLoginFlow(account.id).catch(err => {
+      console.error(`[API] Background login flow failed for ${account.id}:`, err);
+    });
 
     return NextResponse.json({ 
       success: true, 

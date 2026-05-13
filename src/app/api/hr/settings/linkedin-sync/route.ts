@@ -13,6 +13,19 @@ export async function POST(request: Request) {
   try {
     const { supabase, companyId, authUserId } = await getHrContext({ recruiter: true });
     const body = await request.json();
+    const action = body.action;
+
+    // Handle manual fallback from Push to Email
+    if (action === "fallback_to_email" && body.challengeId) {
+      const { error: fallbackError } = await supabase
+        .from("linkedin_challenges")
+        .update({ challenge_status: "expired" })
+        .eq("id", body.challengeId);
+
+      if (fallbackError) throw fallbackError;
+      return NextResponse.json({ success: true });
+    }
+
     const cookie = pickString(body.cookie);
     const name = pickString(body.name);
     const image = pickString(body.image);
@@ -102,6 +115,28 @@ export async function DELETE() {
       .select("metadata")
       .eq("id", companyId)
       .single();
+
+    // 1. Get all LinkedIn accounts for this company
+    const { data: accounts } = await supabase
+      .from("linkedin_accounts")
+      .select("id")
+      .eq("company_id", companyId);
+
+    const accountIds = (accounts || []).map((a: any) => a.id);
+
+    if (accountIds.length > 0) {
+      // 2. Delete all active sessions from the database
+      await supabase
+        .from("linkedin_sessions")
+        .delete()
+        .in("account_id", accountIds);
+
+      // 3. Delete accounts entirely
+      await supabase
+        .from("linkedin_accounts")
+        .delete()
+        .in("id", accountIds);
+    }
 
     const metadata = asObject(company?.metadata);
     delete metadata.linkedin_session_cookie;

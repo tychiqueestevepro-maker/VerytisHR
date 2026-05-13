@@ -89,9 +89,10 @@ export const getSettingsWorkspaceData = cache(async () => {
       .maybeSingle(),
     supabase
       .from("linkedin_accounts")
-      .select("id, email, status, updated_at")
+      .select("id, email, status, updated_at, first_name, last_name, last_detected_ip, preferred_city")
       .eq("company_id", companyId)
       .order("updated_at", { ascending: false }),
+
     supabase
       .from("plans")
       .select("*")
@@ -274,12 +275,15 @@ export const getSettingsWorkspaceData = cache(async () => {
       candidates: candidates.length,
     },
     linkedin: {
-      accountName: pickString(asObject(company.metadata).linkedin_account_name),
+      accountName: linkedinAccounts[0] 
+        ? [pickString(linkedinAccounts[0].first_name), pickString(linkedinAccounts[0].last_name)].filter(Boolean).join(" ")
+        : pickString(asObject(company.metadata).linkedin_account_name),
       accountImage: pickString(asObject(company.metadata).linkedin_account_image),
       lastSyncedAt: pickString(asObject(company.metadata).linkedin_cookie_updated_at),
       lastDetectedIp: pickString(linkedinAccounts[0]?.last_detected_ip),
-      lastDetectedCountry: pickString(linkedinAccounts[0]?.last_detected_country),
-      lastDetectedCity: pickString(linkedinAccounts[0]?.last_detected_city),
+      lastDetectedCountry: pickString(asObject(company.metadata).linkedin_proxy_country),
+      lastDetectedCity: pickString(linkedinAccounts[0]?.preferred_city),
+
       accounts: linkedinAccounts.map(acc => ({
         id: pickString(acc.id),
         email: pickString(acc.email),

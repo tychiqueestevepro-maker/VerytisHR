@@ -156,10 +156,13 @@ export function LinkedinIntegrationCard({
                         <CheckCircle2 className="size-6" />
                       </div>
                       <div>
-                        <p className="text-base font-bold text-foreground">Session Sécurisée Active</p>
-                        <p className="text-xs font-medium text-foreground/40 mt-0.5">
-                          IP: {lastDetectedIp || "Générée"} • {lastDetectedCity || "Localisation auto"}
+                        <p className="text-base font-bold text-foreground">
+                          Session de {accountName || "LinkedIn"}
                         </p>
+                        <p className="text-[11px] font-medium text-foreground/40 mt-0.5">
+                          IP : {lastDetectedIp || "Générée"} • {lastDetectedCity || "Localisation auto"}
+                        </p>
+
                       </div>
                     </div>
                   </div>
