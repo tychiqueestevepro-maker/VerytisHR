@@ -818,6 +818,7 @@ export async function runLinkedInLoginFlow(accountId: string) {
         console.log("[Scraper] Already logged in!");
         loginFinished = true;
       } else {
+        await new Promise(r => setTimeout(r, 2000));
         await page.waitForSelector(userSelector, { timeout: 45000 });
         console.log(`[Scraper] Entering credentials...`);
         
@@ -868,7 +869,7 @@ export async function runLinkedInLoginFlow(accountId: string) {
         throw new Error("LinkedIn demande un CAPTCHA. Changez d'IP ou réessayez plus tard.");
       }
       console.error(`[Scraper] Login interaction failed: ${e.message}. Title: ${title}. Inputs found: ${inputs}`);
-      throw new Error(`Impossible de trouver le formulaire de connexion (Page: ${title}). Inputs: ${inputs || "aucun"}`);
+      throw new Error(`Impossible de trouver ou d'interagir avec le formulaire (Page: ${title}). Erreur: ${e.message}. Inputs: ${inputs || "aucun"}`);
     }
 
     // Wait for either navigation or error message
