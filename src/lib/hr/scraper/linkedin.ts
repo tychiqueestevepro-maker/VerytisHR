@@ -570,15 +570,29 @@ export async function runLinkedInLoginFlow(accountId: string) {
   const email = account.email; // We should probably encrypt email too as per plan
   const proxy = account.proxy_config as any;
 
-  let browser = null;
-  let finalProxyUrl: string | null = null;
-
   const puppeteer = (await import("puppeteer")) as any;
   const proxyChain = (await import("proxy-chain")) as any;
 
-  try {
-    const chromePath = await getChromePath();
-    console.log(`[Scraper] runLinkedInLoginFlow — chrome: ${chromePath ?? "auto"}, proxy: ${proxy?.server ?? "none"}`);
+  let currentProxy = account.proxy_config as any;
+  let attempts = 0;
+  const maxAttempts = 2;
+
+  while (attempts < maxAttempts) {
+    let browser = null;
+    let finalProxyUrl: string | null = null;
+    
+    try {
+      const chromePath = await getChromePath();
+      
+      // Update status detail if it's a retry
+      if (attempts > 0) {
+        console.log(`[Scraper] 🔄 Retry attempt ${attempts + 1} with different proxy region...`);
+        await supabase.from("linkedin_accounts").update({ 
+          last_error: `Échec réseau, tentative avec proxy de secours (${attempts + 1}/${maxAttempts})...` 
+        }).eq("id", accountId);
+      }
+
+      console.log(`[Scraper] runLinkedInLoginFlow (Attempt ${attempts + 1}) — chrome: ${chromePath ?? "auto"}, proxy: ${currentProxy?.server ?? "none"}`);
 
     // Build launch args — proxy-chain creates a local tunnel to handle HTTPS CONNECT auth
     const launchArgs: string[] = [
@@ -593,13 +607,13 @@ export async function runLinkedInLoginFlow(accountId: string) {
 
     // Resolve proxy config — API extraction takes priority over static user:pass
     let resolvedProxy: { server: string; username?: string; password?: string } | null = null;
-    if (proxy?.api_url) {
+    if (currentProxy?.api_url) {
       console.log(`[Scraper] Fetching proxy from Smartproxy API...`);
-      resolvedProxy = await fetchProxyFromApiUrl(proxy.api_url);
+      resolvedProxy = await fetchProxyFromApiUrl(currentProxy.api_url);
       console.log(`[Scraper] Proxy from API: ${resolvedProxy?.server ?? "none"}`);
-    } else if (proxy?.server) {
-      const rawServer = String(proxy.server).replace(/^https?:\/\//, "").replace(/\s+/g, "");
-      let rawUsername = proxy.username ? String(proxy.username).replace(/\s+/g, "") : undefined;
+    } else if (currentProxy?.server) {
+      const rawServer = String(currentProxy.server).replace(/^https?:\/\//, "").replace(/\s+/g, "");
+      let rawUsername = currentProxy.username ? String(currentProxy.username).replace(/\s+/g, "") : undefined;
       
       // The user's specific proxy provider (smartproxy.fr) uses `_area-FR` for targeting.
       // Appending `-session-xxx` corrupts their parser and causes random global IPs.
@@ -608,7 +622,7 @@ export async function runLinkedInLoginFlow(accountId: string) {
       resolvedProxy = { 
         server: rawServer, 
         username: rawUsername, 
-        password: proxy.password ? String(proxy.password).replace(/\s+/g, "") : undefined 
+        password: currentProxy.password ? String(currentProxy.password).replace(/\s+/g, "") : undefined 
       };
     }
 
@@ -616,7 +630,7 @@ export async function runLinkedInLoginFlow(accountId: string) {
     if (resolvedProxy) {
       launchArgs.push(`--proxy-server=http://${resolvedProxy.server}`);
       console.log(`[Scraper] Using native Puppeteer proxy authentication for: ${resolvedProxy.server}`);
-    } else if (proxy && (proxy.server || proxy.api_url)) {
+    } else if (currentProxy && (currentProxy.server || currentProxy.api_url)) {
       throw new Error("Proxy configuré mais aucune IP résolue — vérifiez les credentials Smartproxy.");
     }
 
@@ -1240,19 +1254,48 @@ export async function runLinkedInLoginFlow(accountId: string) {
       throw new Error("Connexion échouée : LinkedIn n'a pas validé la session.");
     }
 
-  } catch (error: any) {
-    console.error("[Scraper] Login flow failed:", error);
-    await supabase.from("linkedin_accounts").update({ 
-      status: "error",
-      last_error: error.message 
-    }).eq("id", accountId);
-    return { success: false, error: error.message };
-  } finally {
-    if (browser) await browser.close();
-    if (finalProxyUrl) {
-      const pc = (await import("proxy-chain")) as any;
-      await pc.closeAnonymizedProxy(finalProxyUrl, true).catch(() => {});
+    } catch (error: any) {
+      if (browser) await browser.close();
+      if (finalProxyUrl) {
+        const pc = (await import("proxy-chain")) as any;
+        await pc.closeAnonymizedProxy(finalProxyUrl, true).catch(() => {});
+      }
+      
+      const isNetworkError = error.message.includes("net::ERR") || error.message.includes("Navigation timeout") || error.message.includes("Proxy health check failed");
+      
+      if (isNetworkError && attempts < maxAttempts - 1) {
+        // Switch region for next attempt
+        const host = String(currentProxy?.server || "").toLowerCase();
+        const user = String(currentProxy?.username || "").toLowerCase();
+        const isFR = host.includes("eu.") || host.includes("fr.") || user.includes("fr");
+        
+        if (isFR) {
+          console.log("[Scraper] Region switch: FR failed, trying US fallback...");
+          currentProxy = {
+            server: process.env.MANAGED_PROXY_HOST_US || "us.smartproxy.net:3121",
+            username: process.env.MANAGED_PROXY_USER_US,
+            password: process.env.MANAGED_PROXY_PASS_US,
+            is_managed: true
+          };
+        } else {
+          console.log("[Scraper] Region switch: US failed, trying FR fallback...");
+          currentProxy = {
+            server: process.env.MANAGED_PROXY_HOST_FR || "eu.smartproxy.net:3121",
+            username: process.env.MANAGED_PROXY_USER_FR,
+            password: process.env.MANAGED_PROXY_PASS_FR,
+            is_managed: true
+          };
+        }
+        attempts++;
+        continue;
+      }
+
+      console.error(`[Scraper] LinkedIn login flow failed permanently:`, error);
+      await supabase.from("linkedin_accounts").update({ 
+        status: "error", 
+        last_error: error.message 
+      }).eq("id", accountId);
+      return { success: false, error: error.message };
     }
   }
-
 }
