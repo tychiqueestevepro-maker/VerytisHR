@@ -615,18 +615,6 @@ export async function runLinkedInLoginFlow(accountId: string) {
       const rawServer = String(currentProxy.server).replace(/^https?:\/\//, "").replace(/\s+/g, "");
       let rawUsername = currentProxy.username ? String(currentProxy.username).replace(/\s+/g, "") : undefined;
 
-      // Appending `-session-xxx` rotates the residential IP while keeping the region.
-      // We inject it before the targeting `_area-` to respect Smartproxy's parser.
-      if (attempts > 0 && rawUsername && !rawUsername.includes("-session-")) {
-        const sessionId = Math.floor(Math.random() * 1000000);
-        if (rawUsername.includes("_area-")) {
-          rawUsername = rawUsername.replace("_area-", `-session-${sessionId}_area-`);
-        } else {
-          rawUsername = `${rawUsername}-session-${sessionId}`;
-        }
-        console.log(`[Scraper] 🔄 Rotating IP for attempt ${attempts + 1} (Session: ${sessionId})`);
-      }
-      
       resolvedProxy = { 
         server: rawServer, 
         username: rawUsername, 
