@@ -15,16 +15,6 @@ export async function POST(request: Request) {
     const body = await request.json();
     const action = body.action;
 
-    // Handle manual fallback from Push to Email
-    if (action === "fallback_to_email" && body.challengeId) {
-      const { error: fallbackError } = await supabase
-        .from("linkedin_challenges")
-        .update({ challenge_status: "expired" })
-        .eq("id", body.challengeId);
-
-      if (fallbackError) throw fallbackError;
-      return NextResponse.json({ success: true });
-    }
 
     const cookie = pickString(body.cookie);
     const name = pickString(body.name);
@@ -68,6 +58,32 @@ export async function POST(request: Request) {
       .from("users")
       .update({ metadata: nextMetadata })
       .eq("id", authUserId);
+
+    // 3. Mise à jour ou création de l'entrée dans linkedin_accounts pour le polling UI
+    const { data: existingAccounts } = await supabase
+      .from("linkedin_accounts")
+      .select("id")
+      .eq("company_id", companyId);
+
+    if (existingAccounts && existingAccounts.length > 0) {
+      await supabase
+        .from("linkedin_accounts")
+        .update({
+          status: "connected",
+          last_error: null,
+          updated_at: new Date().toISOString()
+        })
+        .eq("company_id", companyId);
+    } else {
+      await supabase
+        .from("linkedin_accounts")
+        .insert({
+          company_id: companyId,
+          status: "connected",
+          email: name || "extension-sync",
+          updated_at: new Date().toISOString()
+        });
+    }
 
     if (companyUpdateError && userUpdateError) {
       return NextResponse.json({ 
