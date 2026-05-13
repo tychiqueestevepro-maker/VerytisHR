@@ -34,6 +34,8 @@
     "picomatch": "^4.0.4",
     "proxy-chain": "^2.7.1",
     "puppeteer": "^24.43.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-hook-form": "^7.74.0",
@@ -43,10 +45,10 @@
     "zod": "^4.3.6"
   },
   "optionalDependencies": {
-    "@parcel/watcher-linux-x64-glibc": "^2.5.6",
-    "@parcel/watcher-linux-x64-musl": "^2.5.6",
     "@next/swc-linux-x64-gnu": "16.2.4",
     "@next/swc-linux-x64-musl": "16.2.4",
+    "@parcel/watcher-linux-x64-glibc": "^2.5.6",
+    "@parcel/watcher-linux-x64-musl": "^2.5.6",
     "@swc/core-linux-x64-gnu": "^1.15.33",
     "@swc/core-linux-x64-musl": "^1.15.33",
     "@tailwindcss/oxide-linux-x64-gnu": "4.2.4",

@@ -103,16 +103,18 @@ export function LinkedinSecureSetup() {
   // Écouter la réponse de l'extension
   useEffect(() => {
     const handleResponse = async (event: any) => {
-      if (event.detail?.cookie) {
+      if (event.detail?.cookies || event.detail?.cookie) {
         setIsSyncingExtension(false);
         setStep("connecting");
         try {
           const res = await fetch("/api/hr/settings/linkedin-sync", {
             method: "POST",
             body: JSON.stringify({ 
+              cookies: event.detail.cookies,
               cookie: event.detail.cookie,
               name: event.detail.name,
-              image: event.detail.image
+              image: event.detail.image,
+              email: event.detail.email
             }),
           });
           if (!res.ok) throw new Error("Échec de la synchronisation");
@@ -220,12 +222,12 @@ export function LinkedinSecureSetup() {
               className="py-4 flex flex-col items-center justify-center text-center space-y-4"
             >
               <div className="p-3 rounded-xl bg-secondary/5 border border-border inline-flex flex-col gap-1 items-center w-full">
-                <div className="flex items-center gap-2 text-[10px] font-bold text-foreground/40 uppercase tracking-widest">
-                  <Globe className="size-3" />
-                  Tunnel Sécurisé
+                <div className="flex items-center gap-2 text-[10px] font-bold text-emerald-600 uppercase tracking-widest">
+                  <ShieldCheck className="size-3" />
+                  Session Active (Tunnel Sécurisé)
                 </div>
                 <div className="text-sm font-bold">
-                  {activeAccount?.first_name ? `${activeAccount.first_name} ${activeAccount.last_name}` : (activeAccount?.email || "Compte synchronisé")}
+                  {activeAccount?.email || "Compte LinkedIn Synchronisé"}
                 </div>
                 <p className="text-[11px] font-mono text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
                   Proxy : {activeAccount?.preferred_city || "France"} ({activeAccount?.last_detected_ip || "Actif"})

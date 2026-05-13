@@ -16,13 +16,15 @@ export async function POST(request: Request) {
     const action = body.action;
 
 
-    const cookie = pickString(body.cookie);
+    const cookiesArray = body.cookies; // Nouveau: tableau complet
+    const cookie = pickString(body.cookie); 
     const name = pickString(body.name);
     const image = pickString(body.image);
+    const email = pickString(body.email);
     const html = pickString(body.html);
 
-    if (!cookie) {
-      return NextResponse.json({ error: "Cookie missing" }, { status: 400 });
+    if (!cookiesArray && !cookie) {
+      return NextResponse.json({ error: "Cookies missing" }, { status: 400 });
     }
 
     // On récupère les métadonnées actuelles pour les fusionner
@@ -33,18 +35,26 @@ export async function POST(request: Request) {
       .single();
 
     const currentMetadata = asObject(company?.metadata);
-    // 1. On prépare le cookie de session (li_at ou chaîne complète document.cookie)
-    // Pour une fiabilité maximale sur le serveur, envoyer tout document.cookie depuis l'extension
-    const normalizedCookie = cookie.includes("li_at=") ? cookie : `li_at=${cookie}`;
+    
+    // 1. Préparation des cookies
+    let normalizedCookie = cookie;
+    if (cookiesArray && Array.isArray(cookiesArray)) {
+      const liAt = cookiesArray.find((c: any) => c.name === "li_at");
+      if (liAt) normalizedCookie = `li_at=${liAt.value}`;
+    } else if (cookie) {
+      normalizedCookie = cookie.includes("li_at=") ? cookie : `li_at=${cookie}`;
+    }
 
     const nextMetadata: any = {
       ...currentMetadata,
       linkedin_session_cookie: normalizedCookie,
+      linkedin_full_cookies: cookiesArray || null,
       linkedin_cookie_updated_at: new Date().toISOString(),
     };
 
     if (name) nextMetadata.linkedin_account_name = name;
     if (image) nextMetadata.linkedin_account_image = image;
+    if (email) nextMetadata.linkedin_account_email = email;
     if (html) nextMetadata.last_scraped_html = html;
 
     // 1. Mise à jour de l'entreprise
@@ -70,6 +80,7 @@ export async function POST(request: Request) {
         .from("linkedin_accounts")
         .update({
           status: "connected",
+          email: email || name || "connected",
           last_error: null,
           updated_at: new Date().toISOString()
         })
@@ -80,7 +91,7 @@ export async function POST(request: Request) {
         .insert({
           company_id: companyId,
           status: "connected",
-          email: name || "extension-sync",
+          email: email || name || "extension-sync",
           updated_at: new Date().toISOString()
         });
     }

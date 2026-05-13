@@ -3,14 +3,22 @@
   "name": "Verytis LinkedIn Sync",
   "version": "1.0.0",
   "description": "Synchronise votre session LinkedIn avec VerytisHR",
-  "permissions": ["cookies", "activeTab", "storage"],
-  "host_permissions": ["https://www.linkedin.com/*", "http://localhost:3000/*", "https://verytis-hr.vercel.app/*"],
+  "permissions": ["cookies", "activeTab", "storage", "tabs"],
+  "host_permissions": [
+    "https://*.linkedin.com/*", 
+    "http://localhost:3000/*", 
+    "https://verytis-hr.vercel.app/*"
+  ],
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": ["http://localhost:3000/*", "https://verytis-hr.vercel.app/*"],
+      "matches": [
+        "https://*.linkedin.com/*",
+        "http://localhost:3000/*", 
+        "https://verytis-hr.vercel.app/*"
+      ],
       "js": ["content.js"]
     }
   ],

@@ -5,40 +5,77 @@
   <style>
     body {
       width: 250px;
-      padding: 16px;
-      font-family: system-ui, -apple-system, sans-serif;
+      padding: 15px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #000;
+      color: #fff;
     }
-    h1 {
+    .header {
+      display: flex;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+    .logo {
+      width: 24px;
+      height: 24px;
+      margin-right: 10px;
+    }
+    h2 {
       font-size: 16px;
-      margin: 0 0 8px;
+      margin: 0;
     }
     p {
       font-size: 12px;
-      color: #666;
+      color: #aaa;
       line-height: 1.4;
     }
     .status {
       display: flex;
-      items-center: center;
-      gap: 8px;
-      margin-top: 12px;
-      font-weight: bold;
+      align-items: center;
       font-size: 11px;
+      margin-top: 10px;
+      color: #4ade80;
     }
-    .status-dot {
+    .dot {
       width: 8px;
       height: 8px;
+      background: #4ade80;
       border-radius: 50%;
-      background: #10b981;
+      margin-right: 6px;
+    }
+    button {
+      width: 100%;
+      background: #ed145b;
+      color: white;
+      border: none;
+      padding: 8px;
+      border-radius: 4px;
+      margin-top: 15px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 12px;
+    }
+    button:hover {
+      background: #d11250;
+    }
+    button:active {
+      transform: scale(0.98);
     }
   </style>
 </head>
 <body>
-  <h1>Verytis Sync</h1>
-  <p>Cette extension synchronise votre session LinkedIn avec le moteur de recrutement VerytisHR.</p>
-  <div class="status">
-    <div class="status-dot"></div>
-    Extension Active
+  <div class="header">
+    <img src="icon.png" class="logo" onerror="this.style.display='none'">
+    <h2>Verytis Sync</h2>
   </div>
+  <p>Cette extension synchronise votre session LinkedIn avec le moteur VerytisHR.</p>
+  <div class="status">
+    <div class="dot"></div>
+    <span>Extension Active</span>
+  </div>
+  
+  <button id="syncBtn">Synchroniser maintenant</button>
+
+  <script src="popup.js"></script>
 </body>
 </html>

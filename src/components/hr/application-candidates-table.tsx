@@ -201,24 +201,7 @@ export function ApplicationCandidatesTable({
     [activeCandidateId, candidates],
   );
 
-  useEffect(() => {
-    function onExtensionMessage(event: MessageEvent) {
-      if (event.source !== window) return;
-      const data = event.data as { type?: string; success?: boolean; error?: string | null };
-      if (data.type !== "VERYTIS_SOURCING_VERIFICATION_DONE") return;
-
-      setPreparingLinkedIn(false);
-      if (data.success) {
-        setMessage("LinkedIn verification saved. The profile intelligence is now available for analysis.");
-        router.refresh();
-      } else {
-        setMessage(data.error || "LinkedIn verification failed.");
-      }
-    }
-
-    window.addEventListener("message", onExtensionMessage);
-    return () => window.removeEventListener("message", onExtensionMessage);
-  }, [router]);
+  // Removed extension message listener as we now use server-side verification
 
   function toggleAll() {
     if (allSelected) {
@@ -319,58 +302,20 @@ export function ApplicationCandidatesTable({
     setMessage(null);
 
     try {
-      const response = await fetch("/api/hr/extension-tokens", { method: "POST" });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok || typeof body.token !== "string") {
-        throw new Error(typeof body.error === "string" ? body.error : "Unable to connect the LinkedIn extension");
-      }
-
-      const requestId = typeof crypto.randomUUID === "function"
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      let extensionAcknowledged = false;
-
-      const waitForExtension = new Promise<boolean>((resolve) => {
-        const timeout = window.setTimeout(() => {
-          window.removeEventListener("message", onExtensionConnected);
-          resolve(false);
-        }, 1200);
-
-        function onExtensionConnected(event: MessageEvent) {
-          if (event.source !== window) return;
-          const data = event.data as { type?: string; requestId?: string; success?: boolean };
-          if (data.type !== "VERYTIS_EXTENSION_CONNECTED" || data.requestId !== requestId) return;
-
-          extensionAcknowledged = Boolean(data.success);
-          window.clearTimeout(timeout);
-          window.removeEventListener("message", onExtensionConnected);
-          resolve(extensionAcknowledged);
-        }
-
-        window.addEventListener("message", onExtensionConnected);
+      const response = await fetch(`/api/hr/candidates/${candidate.id}/verify-linkedin`, {
+        method: "POST",
       });
-
-      window.postMessage({
-        type: "VERYTIS_CONNECT_EXTENSION",
-        requestId,
-        extensionToken: body.token,
-        apiBase: window.location.origin,
-        sourcingProfileId: candidate.id,
-        candidateId: candidate.id,
-        linkedinUrl: candidate.linkedinUrl,
-        autoStart: true,
-      }, "*");
-
-      const extensionStarted = await waitForExtension;
-      if (!extensionStarted) {
-        window.open(candidate.linkedinUrl, "_blank", "noopener,noreferrer");
-        setMessage("LinkedIn opened, but the extension did not answer. Check that the Verytis extension is installed and enabled.");
-        return;
+      
+      const body = await response.json().catch(() => ({}));
+      
+      if (!response.ok) {
+        throw new Error(typeof body.error === "string" ? body.error : "LinkedIn verification failed");
       }
 
-      setMessage("LinkedIn verification started. The extension will open LinkedIn, capture the visible profile and save it in Verytis.");
+      setMessage("LinkedIn verification completed successfully on the server.");
+      router.refresh();
     } catch (caught) {
-      setMessage(caught instanceof Error ? caught.message : "Unable to prepare LinkedIn verification");
+      setMessage(caught instanceof Error ? caught.message : "Unable to verify profile");
     } finally {
       setPreparingLinkedIn(false);
     }
