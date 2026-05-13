@@ -614,11 +614,19 @@ export async function runLinkedInLoginFlow(accountId: string) {
     } else if (currentProxy?.server) {
       const rawServer = String(currentProxy.server).replace(/^https?:\/\//, "").replace(/\s+/g, "");
       let rawUsername = currentProxy.username ? String(currentProxy.username).replace(/\s+/g, "") : undefined;
-      
-      // The user's specific proxy provider (smartproxy.fr) uses `_area-FR` for targeting.
-      // Appending `-session-xxx` corrupts their parser and causes random global IPs.
-      // We will leave rawUsername exactly as configured in .env.local.
 
+      // Appending `-session-xxx` rotates the residential IP while keeping the region.
+      // We inject it before the targeting `_area-` to respect Smartproxy's parser.
+      if (attempts > 0 && rawUsername && !rawUsername.includes("-session-")) {
+        const sessionId = Math.floor(Math.random() * 1000000);
+        if (rawUsername.includes("_area-")) {
+          rawUsername = rawUsername.replace("_area-", `-session-${sessionId}_area-`);
+        } else {
+          rawUsername = `${rawUsername}-session-${sessionId}`;
+        }
+        console.log(`[Scraper] 🔄 Rotating IP for attempt ${attempts + 1} (Session: ${sessionId})`);
+      }
+      
       resolvedProxy = { 
         server: rawServer, 
         username: rawUsername, 
@@ -1264,28 +1272,7 @@ export async function runLinkedInLoginFlow(accountId: string) {
       const isNetworkError = error.message.includes("net::ERR") || error.message.includes("Navigation timeout") || error.message.includes("Proxy health check failed");
       
       if (isNetworkError && attempts < maxAttempts - 1) {
-        // Switch region for next attempt
-        const host = String(currentProxy?.server || "").toLowerCase();
-        const user = String(currentProxy?.username || "").toLowerCase();
-        const isFR = host.includes("eu.") || host.includes("fr.") || user.includes("fr");
-        
-        if (isFR) {
-          console.log("[Scraper] Region switch: FR failed, trying US fallback...");
-          currentProxy = {
-            server: process.env.MANAGED_PROXY_HOST_US || "us.smartproxy.net:3121",
-            username: process.env.MANAGED_PROXY_USER_US,
-            password: process.env.MANAGED_PROXY_PASS_US,
-            is_managed: true
-          };
-        } else {
-          console.log("[Scraper] Region switch: US failed, trying FR fallback...");
-          currentProxy = {
-            server: process.env.MANAGED_PROXY_HOST_FR || "eu.smartproxy.net:3121",
-            username: process.env.MANAGED_PROXY_USER_FR,
-            password: process.env.MANAGED_PROXY_PASS_FR,
-            is_managed: true
-          };
-        }
+        console.log(`[Scraper] Network error detected. Retrying with the same proxy region but a new connection...`);
         attempts++;
         continue;
       }
