@@ -1085,9 +1085,13 @@ export async function runLinkedInLoginFlow(accountId: string) {
                    !!document.querySelector('input[placeholder*="recherche"]');
           }).catch(() => false);
 
-          if (isLoggedIn) {
-            console.log("[Scraper] Push confirmed via navigation!");
+          const cookies = await page.cookies();
+          const hasLiAt = cookies.find((c: any) => c.name === "li_at");
+
+          if (isLoggedIn || hasLiAt) {
+            console.log(`[Scraper] Push confirmed! (isLoggedIn: ${isLoggedIn}, hasCookie: ${!!hasLiAt})`);
             confirmed = true;
+            if (hasLiAt) loginFinished = true; // Signals outer loop to stop
             break;
           }
 
