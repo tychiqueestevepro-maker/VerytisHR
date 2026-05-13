@@ -763,21 +763,35 @@ export async function runLinkedInLoginFlow(accountId: string) {
     if (!loginFinished) {
       // --- Phase 2: Human-like Navigation ---
       await updateStatus("Connexion au tunnel résidentiel...");
-      await page.goto("https://www.linkedin.com/", { waitUntil: "networkidle2", timeout: 45000 }).catch(() => {});
       
-      // --- Human Warm-up Phase ---
-      await updateStatus("Simulation d'activité humaine...");
-      await page.evaluate(async () => {
-        const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-        for (let i = 0; i < 3; i++) {
-          window.scrollBy(0, Math.floor(Math.random() * 400) + 200);
-          await delay(Math.floor(Math.random() * 1000) + 500);
+      const landingUrls = ["https://www.linkedin.com/", "https://www.linkedin.com/login"];
+      for (const url of landingUrls) {
+        let success = false;
+        let attempts = 0;
+        while (!success && attempts < 3) {
+          try {
+            await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
+            success = true;
+          } catch (e: any) {
+            attempts++;
+            console.warn(`[Scraper] Navigation to ${url} failed (Attempt ${attempts}/3): ${e.message}`);
+            if (attempts >= 3) throw e;
+            await new Promise(r => setTimeout(r, 3000 * attempts));
+          }
         }
-      });
-      await new Promise(r => setTimeout(r, 2000 + Math.random() * 2000));
-
-      await updateStatus("Accès à la page de connexion...");
-      await page.goto("https://www.linkedin.com/login", { waitUntil: "networkidle2", timeout: 45000 });
+        if (url === "https://www.linkedin.com/") {
+          // --- Human Warm-up Phase ---
+          await updateStatus("Simulation d'activité humaine...");
+          await page.evaluate(async () => {
+            const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+            for (let i = 0; i < 3; i++) {
+              window.scrollBy(0, Math.floor(Math.random() * 400) + 200);
+              await delay(Math.floor(Math.random() * 1000) + 500);
+            }
+          });
+          await new Promise(r => setTimeout(r, 2000 + Math.random() * 2000));
+        }
+      }
     }
 
     // --- Phase 3: Login Interaction ---
