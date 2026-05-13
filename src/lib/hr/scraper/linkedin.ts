@@ -587,6 +587,8 @@ export async function runLinkedInLoginFlow(accountId: string) {
       "--disable-dev-shm-usage",
       "--disable-blink-features=AutomationControlled",
       "--window-size=1280,800",
+      "--ignore-certificate-errors",
+      "--allow-running-insecure-content",
     ];
 
     // Resolve proxy config — API extraction takes priority over static user:pass
@@ -691,6 +693,7 @@ export async function runLinkedInLoginFlow(accountId: string) {
     const launchOptions: any = {
       headless: true,
       executablePath: chromePath,
+      ignoreHTTPSErrors: true,
       args: [...launchArgs]
     };
 
